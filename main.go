@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 
-	t "github.com/jorgensigvardsson/gomud/types"
+	t "github.com/jorgensigvardsson/gomud/absmachine"
 )
 
 func main() {

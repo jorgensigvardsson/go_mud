@@ -1,13 +1,15 @@
-package types
+package absmachine
+
+type Direction int
 
 const (
-	North              = 0
-	South              = 1
-	East               = 2
-	West               = 3
-	Up                 = 4
-	Down               = 5
-	NumberOfDirections = 6
+	DirectionNorth Direction = iota
+	DirectionSouth
+	DirectionEast
+	DirectionWest
+	DirectionUp
+	DirectionDown
+	NumberOfDirections
 )
 
 type Room struct {
@@ -15,12 +17,14 @@ type Room struct {
 	Players       []*Player
 	Mobs          []*Mob
 	AdjacentRooms [NumberOfDirections]*Room
+	World         *World
 }
 
 type Player struct {
 	Name        string
 	Description string
 	Room        *Room
+	World       *World
 }
 
 type Mob struct {
@@ -33,4 +37,10 @@ type World struct {
 	Rooms   []*Room
 	Players []*Player
 	Mobs    []*Mob
+}
+
+type Object struct {
+	Name        string
+	Description string
+	Room        *Room
 }
