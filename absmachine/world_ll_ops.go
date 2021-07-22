@@ -1,5 +1,37 @@
 package absmachine
 
+func NewWorld() *World {
+	return &World{}
+}
+
+func NewPlayer(world *World) *Player {
+	player := &Player{}
+	world.Players = append(world.Players, player)
+	player.World = world
+	return player
+}
+
+func NewRoom(world *World) *Room {
+	room := &Room{}
+	world.Rooms = append(world.Rooms, room)
+	room.World = world
+	return room
+}
+
+func NewMob(world *World) *Mob {
+	mob := &Mob{}
+	world.Mobs = append(world.Mobs, mob)
+	mob.World = world
+	return mob
+}
+
+func NewObject(world *World) *Object {
+	object := &Object{}
+	world.Objects = append(world.Objects, object)
+	object.World = world
+	return object
+}
+
 // Adds a set of rooms to a world. None of the rooms may be associated with a world already!
 func (world *World) AddRooms(rooms []*Room) *LowLevelOpsError {
 	// Check for inconsistencies
@@ -39,8 +71,55 @@ func (world *World) AddPlayers(players []*Player) *LowLevelOpsError {
 	return nil
 }
 
-// Moves a player to a room
-func (world World) MovePlayerToRoom(player *Player, room *Room) *LowLevelOpsError {
+// Adds a set of mobs to a world. None of the mobs may be associated with a world already!
+func (world *World) AddMobs(mobs []*Mob) *LowLevelOpsError {
+	// Check for inconsistencies
+
+	// Are any of the supplied mobs already attached to a world?
+	for _, mob := range mobs {
+		if mob.World != nil {
+			return &LowLevelOpsError{errorCode: ErrorIconsistency, message: "At least one mob is already attached to another world!"}
+		}
+	}
+
+	// Nope, let's go right ahead and add them!
+	world.Mobs = append(world.Mobs, mobs...)
+	for _, mob := range mobs {
+		mob.World = world
+	}
+	return nil
+}
+
+// Adds a set of objects to a world. None of the objects may be associated with a world already!
+func (world *World) AddObjects(objects []*Object) *LowLevelOpsError {
+	// Check for inconsistencies
+
+	// Are any of the supplied objects already attached to a world?
+	for _, object := range objects {
+		if object.World != nil {
+			return &LowLevelOpsError{errorCode: ErrorIconsistency, message: "At least one object is already attached to another world!"}
+		}
+	}
+
+	// Nope, let's go right ahead and add them!
+	world.Objects = append(world.Objects, objects...)
+	for _, object := range objects {
+		object.World = world
+	}
+	return nil
+}
+
+func (room *Room) Connect(otherRoom *Room, direction Direction) *LowLevelOpsError {
+	if room.AdjacentRooms[direction] != nil {
+		return &LowLevelOpsError{errorCode: ErrorIconsistency, message: "Room is already connected to another room in specified direction"}
+	}
+
+	room.AdjacentRooms[direction] = otherRoom
+	return nil
+}
+
+// Puts player in a specific room
+func (player *Player) RelocateToRoom(room *Room) *LowLevelOpsError {
 	if room == player.Room {
 		return nil
 	}
@@ -57,8 +136,44 @@ func (world World) MovePlayerToRoom(player *Player, room *Room) *LowLevelOpsErro
 	return nil
 }
 
+// Puts mob in a specific room
+func (mob *Mob) RelocateToRoom(room *Room) *LowLevelOpsError {
+	if room == mob.Room {
+		return nil
+	}
+
+	if mob.Room != nil {
+		err := removeMobFromRoom(mob.Room, mob)
+		if err != nil {
+			return err
+		}
+	}
+
+	room.Mobs = append(room.Mobs, mob)
+	mob.Room = room
+	return nil
+}
+
+// Puts object in a specific room
+func (object *Object) RelocateToRoom(room *Room) *LowLevelOpsError {
+	if room == object.Room {
+		return nil
+	}
+
+	if object.Room != nil {
+		err := removeObjectFromRoom(object.Room, object)
+		if err != nil {
+			return err
+		}
+	}
+
+	room.Objects = append(room.Objects, object)
+	object.Room = room
+	return nil
+}
+
 // Moves the player in a specific direction
-func (player *Player) MovePlayer(direction Direction) *LowLevelOpsError {
+func (player *Player) Move(direction Direction) *LowLevelOpsError {
 	// Sanity checks!
 	if player.Room == nil {
 		return &LowLevelOpsError{errorCode: ErrorIconsistency, message: "Player has no reference to a room!"}
@@ -73,22 +188,32 @@ func (player *Player) MovePlayer(direction Direction) *LowLevelOpsError {
 		return &LowLevelOpsError{errorCode: ErrorInvalidDirection, message: "Player cannot move in specified direction!"}
 	}
 
-	player.Room.World.MovePlayerToRoom(player, player.Room.AdjacentRooms[direction])
-	return nil
-}
-
-func (room *Room) Connect(otherRoom *Room, direction Direction) *LowLevelOpsError {
-	if room.AdjacentRooms[direction] != nil {
-		return &LowLevelOpsError{errorCode: ErrorIconsistency, message: "Room is already connected to another room in specified direction"}
-	}
-
-	room.AdjacentRooms[direction] = otherRoom
-	return nil
+	return player.RelocateToRoom(player.Room.AdjacentRooms[direction])
 }
 
 func indexOfRoomPlayer(room *Room, player *Player) int {
 	for index, v := range room.Players {
 		if player == v {
+			return index
+		}
+	}
+
+	return -1
+}
+
+func indexOfRoomMob(room *Room, mob *Mob) int {
+	for index, v := range room.Mobs {
+		if mob == v {
+			return index
+		}
+	}
+
+	return -1
+}
+
+func indexOfRoomObject(room *Room, object *Object) int {
+	for index, v := range room.Objects {
+		if object == v {
 			return index
 		}
 	}
@@ -104,5 +229,27 @@ func removePlayerFromRoom(room *Room, player *Player) *LowLevelOpsError {
 
 	room.Players = append(room.Players[:index], room.Players[index+1:]...)
 	player.Room = nil
+	return nil
+}
+
+func removeMobFromRoom(room *Room, mob *Mob) *LowLevelOpsError {
+	index := indexOfRoomMob(room, mob)
+	if index < 0 {
+		return &LowLevelOpsError{errorCode: ErrorIconsistency, message: "Mob was not in room's list of mobs!"}
+	}
+
+	room.Mobs = append(room.Mobs[:index], room.Mobs[index+1:]...)
+	mob.Room = nil
+	return nil
+}
+
+func removeObjectFromRoom(room *Room, object *Object) *LowLevelOpsError {
+	index := indexOfRoomObject(room, object)
+	if index < 0 {
+		return &LowLevelOpsError{errorCode: ErrorIconsistency, message: "Object was not in room's list of mobs!"}
+	}
+
+	room.Objects = append(room.Objects[:index], room.Objects[index+1:]...)
+	object.Room = nil
 	return nil
 }

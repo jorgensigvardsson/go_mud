@@ -16,6 +16,7 @@ type Room struct {
 	Description   string
 	Players       []*Player
 	Mobs          []*Mob
+	Objects       []*Object
 	AdjacentRooms [NumberOfDirections]*Room
 	World         *World
 }
@@ -31,16 +32,27 @@ type Mob struct {
 	Name        string
 	Description string
 	Room        *Room
+	World       *World
 }
 
 type World struct {
 	Rooms   []*Room
 	Players []*Player
 	Mobs    []*Mob
+	Objects []*Object
 }
 
 type Object struct {
 	Name        string
 	Description string
 	Room        *Room
+	World       *World
+}
+
+type RelocatableToRoom interface {
+	RelocateToRoom(room *Room) *LowLevelOpsError
+}
+
+type DirectionMovable interface {
+	Move(direction Direction) *LowLevelOpsError
 }
