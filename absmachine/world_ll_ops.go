@@ -1,11 +1,15 @@
 package absmachine
 
+import "net"
+
 func NewWorld() *World {
 	return &World{}
 }
 
-func NewPlayer(world *World) *Player {
-	player := &Player{}
+func NewPlayer(world *World, connection net.Conn) *Player {
+	player := &Player{connection: connection}
+	world.Lock()
+	defer world.Unlock()
 	world.Players = append(world.Players, player)
 	player.World = world
 	return player
@@ -13,6 +17,8 @@ func NewPlayer(world *World) *Player {
 
 func NewRoom(world *World) *Room {
 	room := &Room{}
+	world.Lock()
+	defer world.Unlock()
 	world.Rooms = append(world.Rooms, room)
 	room.World = world
 	return room
@@ -20,6 +26,8 @@ func NewRoom(world *World) *Room {
 
 func NewMob(world *World) *Mob {
 	mob := &Mob{}
+	world.Lock()
+	defer world.Unlock()
 	world.Mobs = append(world.Mobs, mob)
 	mob.World = world
 	return mob
@@ -27,9 +35,26 @@ func NewMob(world *World) *Mob {
 
 func NewObject(world *World) *Object {
 	object := &Object{}
+	world.Lock()
+	defer world.Unlock()
 	world.Objects = append(world.Objects, object)
 	object.World = world
 	return object
+}
+
+func DestroyPlayer(player *Player) {
+	if player.World == nil {
+		return
+	}
+
+	player.World.Lock()
+	defer player.World.Unlock()
+
+	if player.Room != nil {
+		removePlayerFromRoom(player.Room, player)
+	}
+
+	removePlayerFromWorld(player.World, player)
 }
 
 // Adds a set of rooms to a world. None of the rooms may be associated with a world already!
@@ -191,6 +216,16 @@ func (player *Player) Move(direction Direction) *LowLevelOpsError {
 	return player.RelocateToRoom(player.Room.AdjacentRooms[direction])
 }
 
+func indexOfWorldPlayer(world *World, player *Player) int {
+	for index, v := range world.Players {
+		if player == v {
+			return index
+		}
+	}
+
+	return -1
+}
+
 func indexOfRoomPlayer(room *Room, player *Player) int {
 	for index, v := range room.Players {
 		if player == v {
@@ -219,6 +254,17 @@ func indexOfRoomObject(room *Room, object *Object) int {
 	}
 
 	return -1
+}
+
+func removePlayerFromWorld(world *World, player *Player) *LowLevelOpsError {
+	index := indexOfWorldPlayer(world, player)
+	if index < 0 {
+		return &LowLevelOpsError{errorCode: ErrorIconsistency, message: "Player was not in world's list of players!"}
+	}
+
+	world.Players = append(world.Players[:index], world.Players[index+1:]...)
+	player.World = nil
+	return nil
 }
 
 func removePlayerFromRoom(room *Room, player *Player) *LowLevelOpsError {
@@ -252,4 +298,42 @@ func removeObjectFromRoom(room *Room, object *Object) *LowLevelOpsError {
 	room.Objects = append(room.Objects[:index], room.Objects[index+1:]...)
 	object.Room = nil
 	return nil
+}
+
+func enqueue(commander *commander, command *Command) {
+	commander.commandQueue = append(commander.commandQueue, command)
+}
+
+func dequeue(commander *commander) *Command {
+	if len(commander.commandQueue) == 0 {
+		return nil
+	}
+
+	command := commander.commandQueue[0]
+	commander.commandQueue = commander.commandQueue[1:]
+	return command
+}
+
+func (player *Player) Enqueue(command *Command) {
+	enqueue(&player.commander, command)
+}
+
+func (player *Player) Dequeue() *Command {
+	return dequeue(&player.commander)
+}
+
+func (mob *Mob) Enqueue(command *Command) {
+	enqueue(&mob.commander, command)
+}
+
+func (mob *Mob) Dequeue() *Command {
+	return dequeue(&mob.commander)
+}
+
+func (world *World) Lock() {
+	world.lock.Lock()
+}
+
+func (world *World) Unlock() {
+	world.lock.Unlock()
 }

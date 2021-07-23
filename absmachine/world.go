@@ -1,5 +1,10 @@
 package absmachine
 
+import (
+	"net"
+	"sync"
+)
+
 type Direction int
 
 const (
@@ -11,6 +16,10 @@ const (
 	DirectionDown
 	NumberOfDirections
 )
+
+type commander struct {
+	commandQueue []*Command
+}
 
 type Room struct {
 	Description   string
@@ -26,6 +35,8 @@ type Player struct {
 	Description string
 	Room        *Room
 	World       *World
+	commander   commander
+	connection  net.Conn
 }
 
 type Mob struct {
@@ -33,6 +44,7 @@ type Mob struct {
 	Description string
 	Room        *Room
 	World       *World
+	commander   commander
 }
 
 type World struct {
@@ -40,6 +52,8 @@ type World struct {
 	Players []*Player
 	Mobs    []*Mob
 	Objects []*Object
+
+	lock sync.Mutex
 }
 
 type Object struct {
