@@ -1,7 +1,6 @@
 package absmachine
 
 import (
-	"net"
 	"sync"
 )
 
@@ -17,10 +16,6 @@ const (
 	NumberOfDirections
 )
 
-type commander struct {
-	commandQueue []*Command
-}
-
 type Room struct {
 	Description   string
 	Players       []*Player
@@ -35,8 +30,6 @@ type Player struct {
 	Description string
 	Room        *Room
 	World       *World
-	commander   commander
-	connection  net.Conn
 }
 
 type Mob struct {
@@ -44,7 +37,6 @@ type Mob struct {
 	Description string
 	Room        *Room
 	World       *World
-	commander   commander
 }
 
 type World struct {

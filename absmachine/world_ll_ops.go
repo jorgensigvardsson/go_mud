@@ -1,13 +1,11 @@
 package absmachine
 
-import "net"
-
 func NewWorld() *World {
 	return &World{}
 }
 
-func NewPlayer(world *World, connection net.Conn) *Player {
-	player := &Player{connection: connection}
+func NewPlayer(world *World) *Player {
+	player := &Player{}
 	world.Lock()
 	defer world.Unlock()
 	world.Players = append(world.Players, player)
@@ -298,36 +296,6 @@ func removeObjectFromRoom(room *Room, object *Object) *LowLevelOpsError {
 	room.Objects = append(room.Objects[:index], room.Objects[index+1:]...)
 	object.Room = nil
 	return nil
-}
-
-func enqueue(commander *commander, command *Command) {
-	commander.commandQueue = append(commander.commandQueue, command)
-}
-
-func dequeue(commander *commander) *Command {
-	if len(commander.commandQueue) == 0 {
-		return nil
-	}
-
-	command := commander.commandQueue[0]
-	commander.commandQueue = commander.commandQueue[1:]
-	return command
-}
-
-func (player *Player) Enqueue(command *Command) {
-	enqueue(&player.commander, command)
-}
-
-func (player *Player) Dequeue() *Command {
-	return dequeue(&player.commander)
-}
-
-func (mob *Mob) Enqueue(command *Command) {
-	enqueue(&mob.commander, command)
-}
-
-func (mob *Mob) Dequeue() *Command {
-	return dequeue(&mob.commander)
 }
 
 func (world *World) Lock() {
