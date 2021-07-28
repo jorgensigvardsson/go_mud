@@ -2,6 +2,7 @@ package mudio
 
 import (
 	"bufio"
+	"io"
 	"net"
 	"time"
 )
@@ -42,8 +43,8 @@ type TelnetConnectionObserver interface {
 
 type TelnetConnection struct {
 	connection   net.Conn
-	reader       *bufio.Reader
-	writer       *bufio.Writer
+	reader       io.Reader
+	writer       io.Writer
 	telnetBuffer []byte
 	observer     TelnetConnectionObserver
 }
@@ -58,11 +59,17 @@ func NewTelnetConnection(connection net.Conn, observer TelnetConnectionObserver)
 }
 
 func findTelnetCommand(buf []byte, start int) (index int, len int) {
-
+	// TODO: Implement me
+	return -1, 0
 }
 
 func findTelnetCommandRest(oldBuf []byte, contBuf []byte) int {
+	// TODO: Implement me
+	return -1
+}
 
+func isEscapedIAC(buf []byte) bool {
+	return len(buf) == 2 && buf[0] == IAC && buf[1] == IAC
 }
 
 func copyData(dst []byte, dstIndex int, src []byte, srcIndex int, len int) {
@@ -87,6 +94,8 @@ func (tconn *TelnetConnection) Read(b []byte) (n int, err error) {
 	// the last call to Read()
 
 	curr_input := 0
+	datalen := 0
+
 	if len(tconn.telnetBuffer) > 0 {
 		rest_len := findTelnetCommandRest(tconn.telnetBuffer, pbuf)
 
@@ -99,7 +108,17 @@ func (tconn *TelnetConnection) Read(b []byte) (n int, err error) {
 			tconn.telnetBuffer = tconn.telnetBuffer[:0] // Clear slice (retain memory)
 		} else if rest_len > 0 { // This means we found the complete rest of the command!
 			// Let observer know we got a command
-			tconn.observer.CommandReceived(append(tconn.telnetBuffer, pbuf[0:rest_len]...))
+			possibleCommand := append(tconn.telnetBuffer, pbuf[0:rest_len]...)
+			if isEscapedIAC(possibleCommand) {
+				// It's an escaped IAC character, so let's just push IAC (255) onto the data buffer
+				// and pretend this never happened!
+				copyData(b, datalen, possibleCommand, 0, 1)
+				datalen += 1
+				curr_input += 1
+			} else {
+				// Nope! It was a command!
+				tconn.observer.CommandReceived(possibleCommand)
+			}
 			tconn.telnetBuffer = tconn.telnetBuffer[:0] // Clear slice (retain memory)
 			curr_input += rest_len
 		} else { // rest_len is negative, which means it got some data, but not all! command is still incomplete
@@ -109,8 +128,6 @@ func (tconn *TelnetConnection) Read(b []byte) (n int, err error) {
 	}
 
 	// Now look for the "real" telnet commands (and write data to read buffer)
-	datalen := 0
-
 	for curr_input < len(pbuf) {
 		cmd_index, cmd_len := findTelnetCommand(pbuf, curr_input)
 
@@ -128,7 +145,14 @@ func (tconn *TelnetConnection) Read(b []byte) (n int, err error) {
 			}
 
 			// Let observer know we got a command
-			tconn.observer.CommandReceived(pbuf[cmd_index : cmd_index+cmd_len])
+			possibleCommand := pbuf[cmd_index : cmd_index+cmd_len]
+			if isEscapedIAC(possibleCommand) {
+				// It's an escaped IAC character so let's just push an IAC character to the data buffer
+				copyData(b, datalen, possibleCommand, 0, 1)
+				datalen += 1
+			} else {
+				tconn.observer.CommandReceived(possibleCommand)
+			}
 
 			// Advance current input
 			curr_input = cmd_index + cmd_len
@@ -139,7 +163,48 @@ func (tconn *TelnetConnection) Read(b []byte) (n int, err error) {
 }
 
 func (tconn *TelnetConnection) Write(b []byte) (n int, err error) {
-	return tconn.writer.Write(b)
+	start := 0 // We try to write as many full slices as possible - we only stop at IAC markers
+	// The variable `start` tracks the position that comes just after an IAC marker or start.
+	// When we find a marker, we write everything from `start` up and including the IAC marker
+	// and then we write the IAC marker again (to escape it). Then we adjust `start` to point
+	// after the found IAC marker in a loop until everything has been printed!
+	written_total := 0
+
+	var i int
+	for i = 0; i < len(b); i++ {
+		if b[i] == IAC {
+			// Write all data up to and including the IAC marker
+			written, err := tconn.writer.Write(b[start : i+1])
+			if err != nil {
+				return written, err
+			}
+
+			written_total += written
+
+			// Write out the IAC marker again to escape it
+			written, err = tconn.writer.Write(b[i : i+1])
+			if err != nil {
+				return written, err
+			}
+
+			written_total += written
+
+			// We know the next slice must start right _after_ the IAC marker
+			start = i + 1
+		}
+	}
+
+	// Did we hit the end of the slice but still have something to write out?
+	if start < len(b) {
+		written, err := tconn.writer.Write(b[start:i])
+		if err != nil {
+			return written, err
+		}
+
+		written_total += written
+	}
+
+	return written_total, nil
 }
 
 func (tconn *TelnetConnection) Close() error {
