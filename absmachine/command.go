@@ -1,8 +1,8 @@
 package absmachine
 
 type CommandQueue interface {
-	Enqueue(command *Command)
-	Dequeue() *Command
+	Enqueue(command Command)
+	Dequeue() Command
 }
 
 type Command interface {
