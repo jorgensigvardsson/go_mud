@@ -324,7 +324,7 @@ func (tconn *TelnetConnection) Write(b []byte) (n int, err error) {
 	// When we find a marker, we write everything from `start` up and including the IAC marker
 	// and then we write the IAC marker again (to escape it). Then we adjust `start` to point
 	// after the found IAC marker in a loop until everything has been printed!
-	written_total := 0
+	totalWritten := 0
 
 	var i int
 	for i = 0; i < len(b); i++ {
@@ -335,7 +335,7 @@ func (tconn *TelnetConnection) Write(b []byte) (n int, err error) {
 				return written, err
 			}
 
-			written_total += written
+			totalWritten += written
 
 			// Write out the IAC marker again to escape it
 			written, err = tconn.writer.Write(b[i : i+1])
@@ -343,7 +343,7 @@ func (tconn *TelnetConnection) Write(b []byte) (n int, err error) {
 				return written, err
 			}
 
-			written_total += written
+			totalWritten += written
 
 			// We know the next slice must start right _after_ the IAC marker
 			start = i + 1
@@ -357,10 +357,10 @@ func (tconn *TelnetConnection) Write(b []byte) (n int, err error) {
 			return written, err
 		}
 
-		written_total += written
+		totalWritten += written
 	}
 
-	return written_total, nil
+	return totalWritten, nil
 }
 
 func (tconn *TelnetConnection) Close() error {

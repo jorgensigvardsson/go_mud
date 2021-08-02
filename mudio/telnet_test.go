@@ -3,6 +3,8 @@ package mudio
 import (
 	"fmt"
 	"testing"
+
+	"github.com/jorgensigvardsson/gomud/logging"
 )
 
 /******* Write interface method tests *******/
@@ -193,6 +195,39 @@ func Test_findTelnetCommand_SimpleCommand(t *testing.T) {
 	}
 }
 
+func Test_findTelnetCommandRest_SimpleCommand(t *testing.T) {
+	commands := []byte{
+		NOP,
+		DATA_MARK,
+		BREAK,
+		IP,
+		AO,
+		AYT,
+		EC,
+		EL,
+		GA,
+	}
+
+	for _, command := range commands {
+		alreadyReadBuffer := []byte{IAC}
+		incomingBuffer := []byte{command}
+
+		testname := fmt.Sprintf("%v + %v", alreadyReadBuffer, incomingBuffer)
+
+		t.Run(testname, func(t *testing.T) {
+			len := findTelnetCommandRest(alreadyReadBuffer, incomingBuffer, logging.NewNullLogger())
+
+			if len == 0 {
+				t.Errorf("%v + %v does not yield a TELNET command!", alreadyReadBuffer, incomingBuffer)
+			} else if len < 0 {
+				t.Errorf("%v + %v yields a partial TELNET command when it shouldn't!", alreadyReadBuffer, incomingBuffer)
+			} else if len > 1 {
+				t.Errorf("%v + %v yields a command of length > 1!", alreadyReadBuffer, incomingBuffer)
+			}
+		})
+	}
+}
+
 func Test_findTelnetCommand_Option(t *testing.T) {
 	mk_test_data := func(option byte) []command_test {
 		return []command_test{
@@ -269,6 +304,79 @@ func Test_findTelnetCommand_Option(t *testing.T) {
 				if command_test.cmd_len != cmd_len {
 					t.Errorf("Did not find a command with length %v, but length %v instead", command_test.cmd_len, cmd_len)
 				}
+			}
+		})
+	}
+}
+
+func Test_findTelnetCommandRest_Option(t *testing.T) {
+	optionTypes := []byte{
+		WILL, WONT, DO, DONT,
+	}
+
+	options := []byte{
+		TRANSMIT_BINARY,
+		ECHO,
+		SUPPRESS_GO_AHEAD,
+		STATUS,
+		TIMING_MARK,
+		NAOCRD,
+		NAOHTS,
+		NAOHTD,
+		NAOVTS,
+		NAOVTD,
+		NAOLFD,
+		EXTEND_ASCII,
+		TERMINAL_TYPE,
+		NAWS,
+		TERMINAL_SPEED,
+		TOGGLE_FLOW_CONTROL,
+		LINE_MODE,
+		AUTH,
+	}
+
+	for _, optionType := range optionTypes {
+		for _, option := range options {
+			alreadyReadBuffer := []byte{IAC, optionType}
+			incomingBuffer := []byte{option}
+
+			testname := fmt.Sprintf("%v + %v", alreadyReadBuffer, incomingBuffer)
+
+			t.Run(testname, func(t *testing.T) {
+				len := findTelnetCommandRest(alreadyReadBuffer, incomingBuffer, logging.NewNullLogger())
+
+				if len == 0 {
+					t.Errorf("%v + %v does not yield a TELNET command!", alreadyReadBuffer, incomingBuffer)
+				} else if len < 0 {
+					t.Errorf("%v + %v yields a partial TELNET command when it shouldn't!", alreadyReadBuffer, incomingBuffer)
+				} else if len != 1 {
+					t.Errorf("%v + %v yields a command of length != 1! (%d was returned)", alreadyReadBuffer, incomingBuffer, len)
+				}
+			})
+		}
+	}
+}
+
+func Test_findTelnetCommandRest_OptionPartial(t *testing.T) {
+	optionTypes := []byte{
+		WILL, WONT, DO, DONT,
+	}
+
+	for _, optionType := range optionTypes {
+		alreadyReadBuffer := []byte{IAC}
+		incomingBuffer := []byte{optionType}
+
+		testname := fmt.Sprintf("%v + %v", alreadyReadBuffer, incomingBuffer)
+
+		t.Run(testname, func(t *testing.T) {
+			len := findTelnetCommandRest(alreadyReadBuffer, incomingBuffer, logging.NewNullLogger())
+
+			if len == 0 {
+				t.Errorf("%v + %v does not yield a TELNET command!", alreadyReadBuffer, incomingBuffer)
+			} else if len > 0 {
+				t.Errorf("%v + %v yields a complete TELNET command when it shouldn't!", alreadyReadBuffer, incomingBuffer)
+			} else if len < -1 {
+				t.Errorf("%v + %v yields a command of length < -2! (%d was returned)", alreadyReadBuffer, incomingBuffer, len)
 			}
 		})
 	}
