@@ -110,7 +110,7 @@ func findSubnegotiationEnd(buf []byte, start int) int {
 }
 
 func findTelnetCommand(buf []byte, start int) (index int, nn int, invalid bool) {
-	for i := 0; i < len(buf); i++ {
+	for i := start; i < len(buf); i++ {
 		if buf[i] == IAC {
 			// We found the IAC character, so let's scan to the end!
 			// General structure of telnet commands:
@@ -177,22 +177,15 @@ func min(a int, b int) int {
 	return b
 }
 
-func findTelnetCommandRest(oldBuf []byte, contBuf []byte, logger logging.Logger) int {
-	newBuf := make([]byte, len(oldBuf)+len(contBuf))
-	newBuf = append(append(newBuf, oldBuf...), contBuf...)
+func findTelnetCommandRest(oldBuf []byte, contBuf []byte, logger logging.Logger) (nn int, invalid bool) {
+	newBuf := append(oldBuf, contBuf...)
 
-	cmd_index, cmd_len, cmd_invalid := findTelnetCommand(newBuf, 0)
+	_, cmd_len, cmd_invalid := findTelnetCommand(newBuf, 0)
 
 	if cmd_invalid {
 		// A command was found, but it was invalid
 		logger.Printf("Found an invalid TELNET command in subsequent read: %v\r\n", newBuf[0:min(len(newBuf), 20)])
-		return 0
-	}
-
-	if cmd_index < 0 {
-		// No command found
-		logger.Printf("No TELNET command in subsequent read: %v\r\n", newBuf[0:min(len(newBuf), 20)])
-		return 0
+		return cmd_len - len(oldBuf), true
 	}
 
 	if cmd_len < 0 {
@@ -202,11 +195,11 @@ func findTelnetCommandRest(oldBuf []byte, contBuf []byte, logger logging.Logger)
 		// Note: We also used the old buffer as a prefix, so we need to remove the offset length caused by the prefix
 		// Note: We need to return a negative value, indicating to the caller that we still haven't found the complete
 		//       command sequence
-		return -(-cmd_len - len(oldBuf))
+		return -(-cmd_len - len(oldBuf)), false
 	}
 
 	// If we reach here, we must've had a positive length, so let's return it!
-	return cmd_len - len(oldBuf) // we found the command with old buf as prefix, so remove the offset length caused by the prefix
+	return cmd_len - len(oldBuf), false // we found the command with old buf as prefix, so remove the offset length caused by the prefix
 }
 
 func isEscapedIAC(buf []byte) bool {
@@ -224,8 +217,8 @@ func (tconn *TelnetConnection) Read(b []byte) (n int, err error) {
 	// Create our own buffer for telnet manipulation
 	pbuf := make([]byte, len(b), cap(b))
 
-	// Read data from connection
-	n, err = tconn.connection.Read(pbuf)
+	// Read data from connection (via reader)
+	n, err = tconn.reader.Read(pbuf)
 	if n < 1 || err != nil {
 		return
 	}
@@ -236,26 +229,24 @@ func (tconn *TelnetConnection) Read(b []byte) (n int, err error) {
 
 	curr_input := 0
 	datalen := 0
+	data := pbuf[:n]
 
 	if len(tconn.telnetBuffer) > 0 {
-		rest_len := findTelnetCommandRest(tconn.telnetBuffer, pbuf, tconn.logger)
+		rest_len, cmd_invalid := findTelnetCommandRest(tconn.telnetBuffer, data, tconn.logger)
 
-		if rest_len == 0 {
-			// This is odd! This means that we have found the start of a
-			// telnet command (but not a complete one) in a previous read
-			// but the consecutive read does not contain the rest!
-			// Let's skip it and continue on (after notifying observer)!
-			tconn.observer.InvalidCommand(tconn.telnetBuffer)
+		if cmd_invalid {
+			invalidCommand := append(tconn.telnetBuffer, data[0:rest_len]...)
+			tconn.observer.InvalidCommand(invalidCommand)
 			tconn.telnetBuffer = tconn.telnetBuffer[:0] // Clear slice (retain memory)
+			curr_input += rest_len
 		} else if rest_len > 0 { // This means we found the complete rest of the command!
 			// Let observer know we got a command
-			possibleCommand := append(tconn.telnetBuffer, pbuf[0:rest_len]...)
+			possibleCommand := append(tconn.telnetBuffer, data[0:rest_len]...)
 			if isEscapedIAC(possibleCommand) {
 				// It's an escaped IAC character, so let's just push IAC (255) onto the data buffer
 				// and pretend this never happened!
 				copyData(b, datalen, possibleCommand, 0, 1)
 				datalen += 1
-				curr_input += 1
 			} else {
 				// Nope! It was a command!
 				tconn.observer.CommandReceived(possibleCommand)
@@ -263,44 +254,51 @@ func (tconn *TelnetConnection) Read(b []byte) (n int, err error) {
 			tconn.telnetBuffer = tconn.telnetBuffer[:0] // Clear slice (retain memory)
 			curr_input += rest_len
 		} else { // rest_len is negative, which means it got some data, but not all! command is still incomplete
-			tconn.telnetBuffer = append(tconn.telnetBuffer, pbuf[0:-rest_len]...)
+			tconn.telnetBuffer = append(tconn.telnetBuffer, data[0:-rest_len]...)
 			curr_input += -rest_len
 		}
 	}
 
 	// Now look for the "real" telnet commands (and write data to read buffer)
-	for curr_input < len(pbuf) {
-		cmd_index, cmd_len, cmd_invalid := findTelnetCommand(pbuf, curr_input)
+	for curr_input < n {
+		cmd_index, cmd_len, cmd_invalid := findTelnetCommand(data, curr_input)
 
 		if cmd_invalid {
 			// the command was invalid! Let's report it, and move on
-			tconn.observer.InvalidCommand(pbuf[cmd_index : cmd_index+cmd_len])
+			tconn.observer.InvalidCommand(data[cmd_index : cmd_index+cmd_len])
+
+			if cmd_index > 0 {
+				// Is there any data before the invalid command? If so, then return it
+				copyData(b, datalen, data, curr_input, cmd_index-curr_input)
+				datalen += cmd_index - curr_input
+			}
+
 			curr_input = cmd_index + cmd_len
 		} else if cmd_index < 0 {
 			// No more telnet command data. Copy data from start up until the end to b
-			copyData(b, datalen, pbuf, curr_input, len(pbuf)-curr_input)
-			datalen += len(pbuf) - curr_input
-			curr_input += len(pbuf) - curr_input
+			copyData(b, datalen, data, curr_input, n-curr_input)
+			datalen += n - curr_input
+			curr_input += n - curr_input
 		} else {
 			// A command was found!
 			// Separate the data found in front of the command into b (if any)
 			if curr_input < cmd_index {
-				copyData(b, datalen, pbuf, curr_input, cmd_index-curr_input)
+				copyData(b, datalen, data, curr_input, cmd_index-curr_input)
 				datalen += cmd_index - curr_input
 			}
 
 			if cmd_len < 0 {
 				// rest_len cmd_len negative, which means it got some data, but not all! command is still incomplete
-				tconn.telnetBuffer = pbuf[0:-cmd_len]
+				tconn.telnetBuffer = data[0:-cmd_len]
 
-				if -cmd_len+curr_input < len(pbuf) {
+				if -cmd_len+curr_input < n {
 					panic("BUG: we've missed data looking for TELNET commands!")
 				}
 				// We're done!
 				break
 			} else {
 				// Let observer know we got a command
-				possibleCommand := pbuf[cmd_index : cmd_index+cmd_len]
+				possibleCommand := data[cmd_index : cmd_index+cmd_len]
 				if isEscapedIAC(possibleCommand) {
 					// It's an escaped IAC character so let's just push an IAC character to the data buffer
 					copyData(b, datalen, possibleCommand, 0, 1)
@@ -332,7 +330,7 @@ func (tconn *TelnetConnection) Write(b []byte) (n int, err error) {
 			// Write all data up to and including the IAC marker
 			written, err := tconn.writer.Write(b[start : i+1])
 			if err != nil {
-				return written, err
+				return totalWritten + written, err
 			}
 
 			totalWritten += written
@@ -340,7 +338,7 @@ func (tconn *TelnetConnection) Write(b []byte) (n int, err error) {
 			// Write out the IAC marker again to escape it
 			written, err = tconn.writer.Write(b[i : i+1])
 			if err != nil {
-				return written, err
+				return totalWritten + written, err
 			}
 
 			totalWritten += written
@@ -354,7 +352,7 @@ func (tconn *TelnetConnection) Write(b []byte) (n int, err error) {
 	if start < len(b) {
 		written, err := tconn.writer.Write(b[start:i])
 		if err != nil {
-			return written, err
+			return totalWritten + written, err
 		}
 
 		totalWritten += written
