@@ -1,17 +1,18 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
 	"net"
 	"time"
 
 	"github.com/jorgensigvardsson/gomud/absmachine"
+	"github.com/jorgensigvardsson/gomud/logging"
 	"github.com/jorgensigvardsson/gomud/mudio"
 )
 
 func main() {
 	world := absmachine.NewWorld()
+	logger := logging.NewConsoleLogger()
 
 	listener, err := net.Listen("tcp", ":5000")
 
@@ -20,12 +21,12 @@ func main() {
 	}
 
 	for {
-		go handleConnections(listener, world)
+		go handleConnections(listener, world, logger)
 		time.Sleep(1000 * time.Second)
 	}
 }
 
-func handleConnections(listener net.Listener, world *absmachine.World) {
+func handleConnections(listener net.Listener, world *absmachine.World, logger logging.Logger) {
 	for {
 		conn, err := listener.Accept()
 
@@ -33,12 +34,12 @@ func handleConnections(listener net.Listener, world *absmachine.World) {
 			return // TODO: Handle err
 		}
 
-		go handleConnection(conn, world)
+		go handleConnection(conn, world, logger)
 	}
 }
 
-func handleConnection(connection net.Conn, world *absmachine.World) {
-	playerConnection, err := handleLogin(connection, world)
+func handleConnection(connection net.Conn, world *absmachine.World, logger logging.Logger) {
+	playerConnection, err := handleLogin(connection, world, logger)
 	if err != nil {
 		return
 	}
@@ -46,62 +47,71 @@ func handleConnection(connection net.Conn, world *absmachine.World) {
 	defer absmachine.DestroyPlayer(playerConnection.player)
 
 	for {
-		bytes, err := playerConnection.reader.ReadString('\n')
+		line, err := playerConnection.connection.ReadLine()
 
 		if err != nil {
 			fmt.Println("Error reading data from connection ")
 		}
-		fmt.Println("Handling connection here... (TODO)", bytes, err)
+		fmt.Println("Handling connection here... (TODO)", line, err)
 
 		// TODO: Parse and dispatch commands here. Dispatch to a command queue, and have a timer execute commands...?
 		// TODO: reject commands when/if command queue depth is too large to avoid DOS attacks
-		time.Sleep(1000 * time.Hour)
+		//time.Sleep(1000 * time.Hour)
 	}
 }
 
-func handleLogin(connection net.Conn, world *absmachine.World) (*PlayerConnection, error) {
-	reader := bufio.NewReader(connection)
-	writer := bufio.NewWriter(connection)
+type PlayerTelnetConnectionObserver struct {
+	player *absmachine.Player
+}
 
-	showMotd(writer)
-	player, err := promptLogin(writer, reader, world)
+func (observer *PlayerTelnetConnectionObserver) CommandReceived(command []byte) {
+	// TODO: Do something with the telnet command!
+}
+
+func (observer *PlayerTelnetConnectionObserver) InvalidCommand(data []byte) {
+	// TODO: Do something with the invalid telnet command!
+}
+
+func handleLogin(connection net.Conn, world *absmachine.World, logger logging.Logger) (*PlayerConnection, error) {
+	playerTelnetConnectionObserver := &PlayerTelnetConnectionObserver{}
+	telnetConnection := mudio.NewTelnetConnection(connection, playerTelnetConnectionObserver, logger)
+
+	showMotd(telnetConnection)
+	player, err := promptLogin(telnetConnection, world)
 	if err != nil {
 		return nil, err
 	}
 
+	playerTelnetConnectionObserver.player = player
+
 	return &PlayerConnection{
-		player: player,
-		reader: reader,
-		writer: writer,
+		player:     player,
+		connection: telnetConnection,
 	}, nil
 }
 
-func showMotd(writer *bufio.Writer) {
+func showMotd(telnetConnection mudio.TelnetConnection) {
 	// TODO: Read MOTD from file
-	writer.WriteString("Welcome to GO mud!\r\n")
-	writer.Flush()
+	telnetConnection.WriteLine("Welcome to GO mud!")
 }
 
-func promptLogin(writer *bufio.Writer, reader *bufio.Reader, world *absmachine.World) (*absmachine.Player, error) {
-	writer.WriteString("Username: ")
-	writer.Flush()
+func promptLogin(telnetConnection mudio.TelnetConnection, world *absmachine.World) (*absmachine.Player, error) {
+	telnetConnection.WriteString("Username: ")
 
-	username, err := reader.ReadString('\n')
+	username, err := telnetConnection.ReadLine()
 	if err != nil {
 		return nil, err
 	}
 
 	fmt.Println("Got user", username)
 
-	writer.WriteString("Password: ")
-	writer.Flush()
-	mudio.EchoOff(writer)
-	password, err := reader.ReadString('\n')
-	mudio.EchoOn(writer)
+	telnetConnection.WriteString("Password: ")
+	telnetConnection.EchoOff()
+	password, err := telnetConnection.ReadLine()
+	telnetConnection.EchoOn()
 
 	// Need to emit a new line, because echo off will eat the new line on the client end
-	writer.WriteString("\r\n")
-	writer.Flush()
+	telnetConnection.WriteLine("")
 
 	fmt.Println("Got password", password, password[0], password[1], password[2], password[3])
 	if err != nil {
@@ -116,41 +126,7 @@ func promptLogin(writer *bufio.Writer, reader *bufio.Reader, world *absmachine.W
 }
 
 type PlayerConnection struct {
-	player   *absmachine.Player
-	reader   *bufio.Reader
-	writer   *bufio.Writer
-	commands []*absmachine.Command
-}
-
-func rawWriteLine(writer *bufio.Writer, text string) error {
-	_, err := writer.WriteString(text)
-	if err != nil {
-		return err
-	}
-
-	_, err = writer.WriteString("\r\n")
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (playerConnection PlayerConnection) WriteLine(text string) error {
-	err := rawWriteLine(playerConnection.writer, text)
-	if err == nil {
-		err = playerConnection.writer.Flush()
-	}
-	return err
-}
-
-func (playerConnection PlayerConnection) WriteLines(textLines []string) error {
-	for _, text := range textLines {
-		err := rawWriteLine(playerConnection.writer, text)
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
+	player     *absmachine.Player
+	connection mudio.TelnetConnection
+	commands   []*absmachine.Command
 }

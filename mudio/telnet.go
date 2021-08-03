@@ -2,9 +2,7 @@ package mudio
 
 import (
 	"bufio"
-	"io"
 	"net"
-	"time"
 
 	"github.com/jorgensigvardsson/gomud/logging"
 )
@@ -58,39 +56,37 @@ const (
 	AUTH                = 37
 )
 
-func EchoOn(writer *bufio.Writer) error {
-	_, err := writer.Write([]byte{IAC, WONT, ECHO, 0})
-	if err == nil {
-		err = writer.Flush()
-	}
-	return err
-}
-
-func EchoOff(writer *bufio.Writer) error {
-	_, err := writer.Write([]byte{IAC, WILL, ECHO, 0})
-	if err == nil {
-		err = writer.Flush()
-	}
-	return err
-}
-
 type TelnetConnectionObserver interface {
 	// TODO: Extend this interface
 	CommandReceived(command []byte)
 	InvalidCommand(data []byte)
 }
 
-type TelnetConnection struct {
-	connection   net.Conn
-	reader       io.Reader
-	writer       io.Writer
-	telnetBuffer []byte
-	observer     TelnetConnectionObserver
-	logger       logging.Logger
+const (
+	STATE_NOTHING        = 0
+	STATE_IAC            = 1
+	STATE_OPTION_COMMAND = 2
+	STATE_SUBNEG         = 3
+)
+
+type TelnetConnection interface {
+	ReadLine() (line string, err error)
+	WriteLine(line string) error
+	WriteString(text string) error
+	EchoOff() error
+	EchoOn() error
 }
 
-func NewTelnetConnection(connection net.Conn, observer TelnetConnectionObserver, logger logging.Logger) *TelnetConnection {
-	return &TelnetConnection{
+type implTelnetConnection struct {
+	connection net.Conn
+	reader     *bufio.Reader
+	writer     *bufio.Writer
+	observer   TelnetConnectionObserver
+	logger     logging.Logger
+}
+
+func NewTelnetConnection(connection net.Conn, observer TelnetConnectionObserver, logger logging.Logger) TelnetConnection {
+	return &implTelnetConnection{
 		connection: connection,
 		reader:     bufio.NewReader(connection),
 		writer:     bufio.NewWriter(connection),
@@ -99,288 +95,153 @@ func NewTelnetConnection(connection net.Conn, observer TelnetConnectionObserver,
 	}
 }
 
-func findSubnegotiationEnd(buf []byte, start int) int {
-	for i := start; i < len(buf); i++ {
-		if buf[i] == SE {
-			return i
+func (tconn *implTelnetConnection) readByte() (b byte, err error) {
+	state := STATE_NOTHING
+	buf := make([]byte, 0, 3)
+
+	for {
+		b, err := tconn.reader.ReadByte()
+		if err != nil {
+			return b, err
 		}
-	}
 
-	return -1
-}
-
-func findTelnetCommand(buf []byte, start int) (index int, nn int, invalid bool) {
-	for i := start; i < len(buf); i++ {
-		if buf[i] == IAC {
-			// We found the IAC character, so let's scan to the end!
-			// General structure of telnet commands:
-			// Length 2: IAC IAC - escaped IAC
-			// Length 2: IAC CMD - CMD sent
-			// Length 3: IAC (WILL|WONT|DO|DONT) OPT - option
-			// Length N: IAC SB ... IAC SE - option subnegotiation
-
-			// Let's check if we have a complete command!
-
-			// If we find a valid prefix for a command, but not complete,
-			// we return the prefix's length as a negative number!
-
-			length_left := len(buf) - (i + 1)
-
-			if length_left > 0 {
-				if buf[i+1] == IAC {
-					return i, 2, false // we found an escaped IAC
-				}
-
-				if buf[i+1] == SB {
-					// Subnegotiation start!
-					// Check if it's an IAC SB ... IAC SE sequence
-					sub_end := findSubnegotiationEnd(buf, i+1)
-					if sub_end < 0 {
-						// Did not find the end, it must arrive later!
-						return i, -(len(buf) - i), false
-					} else {
-						// Did find the end, so yay!
-						return i, sub_end - i + 1, false
-					}
-				}
-
-				if buf[i+1] >= FIRST_OPTION_COMMAND && buf[i+1] <= LAST_OPTION_COMMAND {
-					if length_left >= 2 {
-						return i, 3, false // We found an option command
-					} else {
-						// It's an incomplete option command, we'll get the rest later!
-						return i, -2, false
-					}
-				}
-
-				if buf[i+1] >= FIRST_COMMAND && buf[i+1] <= LAST_COMMAND {
-					// It's a basic command
-					return i, 2, false
-				}
-
-				// It's an invalid command!
-				return i, 2, true
+		switch state {
+		case STATE_NOTHING:
+			switch b {
+			case IAC:
+				buf = append(buf, b)
+				state = STATE_IAC
+			default:
+				return b, nil // Not in a state, so just return byte
 			}
+		case STATE_IAC:
+			switch {
+			case b == IAC:
+				return b, nil // IAC + IAC -> IAC! An escaped IAC code
+			case b == SB:
+				state = STATE_SUBNEG
+				buf = append(buf, b)
+			case b >= FIRST_COMMAND && b <= LAST_COMMAND:
+				state = STATE_NOTHING
+				// Let observer know we have a command!
+				tconn.observer.CommandReceived(append(buf, b))
+				buf = buf[:0]
+			case b >= FIRST_OPTION_COMMAND && b <= LAST_OPTION_COMMAND:
+				state = STATE_OPTION_COMMAND // Wait for the option
+				buf = append(buf, b)
+			default:
+				// ERROR!
+				tconn.observer.InvalidCommand(append(buf, b))
+				buf = buf[:0]
+				state = STATE_NOTHING
+			}
+		case STATE_OPTION_COMMAND:
+			tconn.observer.CommandReceived(append(buf, b))
+			buf = buf[:0]
+			state = STATE_NOTHING
+		case STATE_SUBNEG:
+			switch b {
+			case SE:
+				tconn.observer.CommandReceived(append(buf, b))
+				state = STATE_NOTHING
+			default:
+				buf = append(buf, b)
+			}
+		}
+	}
+}
 
-			// Nope, we only got the lonely IAC! The rest will come in the next read
-			return i, -1, false
+func (tconn *implTelnetConnection) writeByte(b byte) error {
+	if b == IAC {
+		err := tconn.writer.WriteByte(IAC)
+		if err != nil {
+			return err
 		}
 	}
 
-	return -1, 0, false
-}
-
-func min(a int, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-func findTelnetCommandRest(oldBuf []byte, contBuf []byte, logger logging.Logger) (nn int, invalid bool) {
-	newBuf := append(oldBuf, contBuf...)
-
-	_, cmd_len, cmd_invalid := findTelnetCommand(newBuf, 0)
-
-	if cmd_invalid {
-		// A command was found, but it was invalid
-		logger.Printf("Found an invalid TELNET command in subsequent read: %v\r\n", newBuf[0:min(len(newBuf), 20)])
-		return cmd_len - len(oldBuf), true
-	}
-
-	if cmd_len < 0 {
-		// We found a partial, so let's return it
-		// Note: the length is negative because it signfies that it was not complete,
-		//       so we need to remove the sign!
-		// Note: We also used the old buffer as a prefix, so we need to remove the offset length caused by the prefix
-		// Note: We need to return a negative value, indicating to the caller that we still haven't found the complete
-		//       command sequence
-		return -(-cmd_len - len(oldBuf)), false
-	}
-
-	// If we reach here, we must've had a positive length, so let's return it!
-	return cmd_len - len(oldBuf), false // we found the command with old buf as prefix, so remove the offset length caused by the prefix
-}
-
-func isEscapedIAC(buf []byte) bool {
-	return len(buf) == 2 && buf[0] == IAC && buf[1] == IAC
-}
-
-func copyData(dst []byte, dstIndex int, src []byte, srcIndex int, len int) {
-	for i := 0; i < len; i++ {
-		dst[i+dstIndex] = src[i+srcIndex]
-	}
+	return tconn.writer.WriteByte(b)
 }
 
 /* net.Conn, io.Reader and io.Writer implementations for TelnetConnection */
-func (tconn *TelnetConnection) Read(b []byte) (n int, err error) {
-	// Create our own buffer for telnet manipulation
-	pbuf := make([]byte, len(b), cap(b))
+func (tconn *implTelnetConnection) ReadLine() (line string, err error) {
+	buf := make([]byte, 0, 50)
+	done := false
 
-	// Read data from connection (via reader)
-	n, err = tconn.reader.Read(pbuf)
-	if n < 1 || err != nil {
-		return
-	}
+	for !done {
+		b, err := tconn.readByte()
 
-	// Now look for telnet commands in the data stream
-	// Check if we're reading an unfinished telnet command sequence from
-	// the last call to Read()
-
-	curr_input := 0
-	datalen := 0
-	data := pbuf[:n]
-
-	if len(tconn.telnetBuffer) > 0 {
-		rest_len, cmd_invalid := findTelnetCommandRest(tconn.telnetBuffer, data, tconn.logger)
-
-		if cmd_invalid {
-			invalidCommand := append(tconn.telnetBuffer, data[0:rest_len]...)
-			tconn.observer.InvalidCommand(invalidCommand)
-			tconn.telnetBuffer = tconn.telnetBuffer[:0] // Clear slice (retain memory)
-			curr_input += rest_len
-		} else if rest_len > 0 { // This means we found the complete rest of the command!
-			// Let observer know we got a command
-			possibleCommand := append(tconn.telnetBuffer, data[0:rest_len]...)
-			if isEscapedIAC(possibleCommand) {
-				// It's an escaped IAC character, so let's just push IAC (255) onto the data buffer
-				// and pretend this never happened!
-				copyData(b, datalen, possibleCommand, 0, 1)
-				datalen += 1
-			} else {
-				// Nope! It was a command!
-				tconn.observer.CommandReceived(possibleCommand)
-			}
-			tconn.telnetBuffer = tconn.telnetBuffer[:0] // Clear slice (retain memory)
-			curr_input += rest_len
-		} else { // rest_len is negative, which means it got some data, but not all! command is still incomplete
-			tconn.telnetBuffer = append(tconn.telnetBuffer, data[0:-rest_len]...)
-			curr_input += -rest_len
-		}
-	}
-
-	// Now look for the "real" telnet commands (and write data to read buffer)
-	for curr_input < n {
-		cmd_index, cmd_len, cmd_invalid := findTelnetCommand(data, curr_input)
-
-		if cmd_invalid {
-			// the command was invalid! Let's report it, and move on
-			tconn.observer.InvalidCommand(data[cmd_index : cmd_index+cmd_len])
-
-			if cmd_index > 0 {
-				// Is there any data before the invalid command? If so, then return it
-				copyData(b, datalen, data, curr_input, cmd_index-curr_input)
-				datalen += cmd_index - curr_input
-			}
-
-			curr_input = cmd_index + cmd_len
-		} else if cmd_index < 0 {
-			// No more telnet command data. Copy data from start up until the end to b
-			copyData(b, datalen, data, curr_input, n-curr_input)
-			datalen += n - curr_input
-			curr_input += n - curr_input
-		} else {
-			// A command was found!
-			// Separate the data found in front of the command into b (if any)
-			if curr_input < cmd_index {
-				copyData(b, datalen, data, curr_input, cmd_index-curr_input)
-				datalen += cmd_index - curr_input
-			}
-
-			if cmd_len < 0 {
-				// rest_len cmd_len negative, which means it got some data, but not all! command is still incomplete
-				tconn.telnetBuffer = data[0:-cmd_len]
-
-				if -cmd_len+curr_input < n {
-					panic("BUG: we've missed data looking for TELNET commands!")
-				}
-				// We're done!
-				break
-			} else {
-				// Let observer know we got a command
-				possibleCommand := data[cmd_index : cmd_index+cmd_len]
-				if isEscapedIAC(possibleCommand) {
-					// It's an escaped IAC character so let's just push an IAC character to the data buffer
-					copyData(b, datalen, possibleCommand, 0, 1)
-					datalen += 1
-				} else {
-					tconn.observer.CommandReceived(possibleCommand)
-				}
-
-				// Advance current input
-				curr_input = cmd_index + cmd_len
-			}
-		}
-	}
-
-	return datalen, nil
-}
-
-func (tconn *TelnetConnection) Write(b []byte) (n int, err error) {
-	start := 0 // We try to write as many full slices as possible - we only stop at IAC markers
-	// The variable `start` tracks the position that comes just after an IAC marker or start.
-	// When we find a marker, we write everything from `start` up and including the IAC marker
-	// and then we write the IAC marker again (to escape it). Then we adjust `start` to point
-	// after the found IAC marker in a loop until everything has been printed!
-	totalWritten := 0
-
-	var i int
-	for i = 0; i < len(b); i++ {
-		if b[i] == IAC {
-			// Write all data up to and including the IAC marker
-			written, err := tconn.writer.Write(b[start : i+1])
-			if err != nil {
-				return totalWritten + written, err
-			}
-
-			totalWritten += written
-
-			// Write out the IAC marker again to escape it
-			written, err = tconn.writer.Write(b[i : i+1])
-			if err != nil {
-				return totalWritten + written, err
-			}
-
-			totalWritten += written
-
-			// We know the next slice must start right _after_ the IAC marker
-			start = i + 1
-		}
-	}
-
-	// Did we hit the end of the slice but still have something to write out?
-	if start < len(b) {
-		written, err := tconn.writer.Write(b[start:i])
 		if err != nil {
-			return totalWritten + written, err
+			return string(buf), err // TODO: Do we need proper UTF-8 parsing?
 		}
 
-		totalWritten += written
+		if b != '\r' && b != '\n' {
+			buf = append(buf, b)
+		} else if b == '\r' {
+			continue // Don't store \r in string
+		} else {
+			done = true // Must be \n, so we're done!
+		}
 	}
 
-	return totalWritten, nil
+	return string(buf), nil
 }
 
-func (tconn *TelnetConnection) Close() error {
+func (tconn *implTelnetConnection) WriteLine(line string) error {
+	for _, b := range []byte(line) {
+		err := tconn.writeByte(b)
+		if err != nil {
+			return err
+		}
+	}
+
+	err := tconn.writeByte('\r')
+	if err != nil {
+		return err
+	}
+
+	err = tconn.writeByte('\n')
+	if err != nil {
+		return err
+	}
+
+	return tconn.writer.Flush()
+}
+
+func (tconn *implTelnetConnection) WriteString(text string) error {
+	for _, b := range []byte(text) {
+		err := tconn.writeByte(b)
+		if err != nil {
+			return err
+		}
+	}
+
+	return tconn.writer.Flush()
+}
+
+func (tconn *implTelnetConnection) Close() error {
 	return tconn.connection.Close()
 }
 
-func (tconn *TelnetConnection) LocalAddr() net.Addr {
+func (tconn *implTelnetConnection) LocalAddr() net.Addr {
 	return tconn.connection.LocalAddr()
 }
 
-func (tconn *TelnetConnection) RemoteAddr() net.Addr {
+func (tconn *implTelnetConnection) RemoteAddr() net.Addr {
 	return tconn.connection.RemoteAddr()
 }
 
-func (tconn *TelnetConnection) SetDeadline(t time.Time) error {
-	return tconn.connection.SetDeadline(t)
+func (tconn *implTelnetConnection) EchoOn() error {
+	_, err := tconn.writer.Write([]byte{IAC, WONT, ECHO, 0})
+	if err == nil {
+		err = tconn.writer.Flush()
+	}
+	return err
 }
 
-func (tconn *TelnetConnection) SetReadDeadline(t time.Time) error {
-	return tconn.connection.SetReadDeadline(t)
-}
-
-func (tconn *TelnetConnection) SetWriteDeadline(t time.Time) error {
-	return tconn.connection.SetWriteDeadline(t)
+func (tconn *implTelnetConnection) EchoOff() error {
+	_, err := tconn.writer.Write([]byte{IAC, WILL, ECHO, 0})
+	if err == nil {
+		err = tconn.writer.Flush()
+	}
+	return err
 }
