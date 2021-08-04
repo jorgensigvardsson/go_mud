@@ -1,7 +1,11 @@
 package mudio
 
-import "github.com/jorgensigvardsson/gomud/absmachine"
+import (
+	"errors"
 
-func Parse(text string) *absmachine.Command {
-	return nil
+	"github.com/jorgensigvardsson/gomud/absmachine"
+)
+
+func Parse(text string) (command *absmachine.Command, err error) {
+	return nil, errors.New("Not implemented")
 }

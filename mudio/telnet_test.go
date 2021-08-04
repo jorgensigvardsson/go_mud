@@ -221,3 +221,110 @@ func Test_writeByte_IACData(t *testing.T) {
 		t.Errorf("Unexpected write buffer %v", writeBuffer.Bytes())
 	}
 }
+
+/*** ReadLine tests ***/
+func Test_ReadLine_ReadsUntilNewLine(t *testing.T) {
+	readBuffer := []byte{'H', 'e', 'l', 'l', 'o', '\r', '\n', 'W', 'o', 'r', 'l', 'd', '\r', '\n'}
+	conn := &implTelnetConnection{
+		reader: bufio.NewReader(bytes.NewReader(readBuffer)),
+	}
+
+	line, err := conn.ReadLine()
+
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+
+	if line != "Hello" {
+		t.Errorf("Unexpected line: %v", line)
+	}
+}
+
+func Test_ReadLine_ReadsUntilError(t *testing.T) {
+	readBuffer := []byte{'H', 'e', 'l', 'l', 'o'}
+	conn := &implTelnetConnection{
+		reader: bufio.NewReader(bytes.NewReader(readBuffer)),
+	}
+
+	line, err := conn.ReadLine()
+
+	if err != io.EOF {
+		t.Errorf("Unexpected error: %v", err)
+	}
+
+	if line != "Hello" {
+		t.Errorf("Unexpected line: %v", line)
+	}
+}
+
+/*** WriteLine tests ***/
+func Test_WriteLine_AppendsCrAndLf(t *testing.T) {
+	writeBuffer := bytes.NewBuffer([]byte{})
+	conn := &implTelnetConnection{
+		writer: bufio.NewWriter(writeBuffer),
+	}
+
+	err := conn.WriteLine("Hello")
+
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+
+	if !bytes.Equal([]byte{'H', 'e', 'l', 'l', 'o', '\r', '\n'}, writeBuffer.Bytes()) {
+		t.Errorf("Unexpected write buffer %v", writeBuffer.Bytes())
+	}
+}
+
+/*** WriteLine tests ***/
+func Test_WriteString(t *testing.T) {
+	writeBuffer := bytes.NewBuffer([]byte{})
+	conn := &implTelnetConnection{
+		writer: bufio.NewWriter(writeBuffer),
+	}
+
+	err := conn.WriteString("Hello")
+
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+
+	if !bytes.Equal([]byte{'H', 'e', 'l', 'l', 'o'}, writeBuffer.Bytes()) {
+		t.Errorf("Unexpected write buffer %v", writeBuffer.Bytes())
+	}
+}
+
+/*** EchoOn tests ***/
+func Test_EchoOn(t *testing.T) {
+	writeBuffer := bytes.NewBuffer([]byte{})
+	conn := &implTelnetConnection{
+		writer: bufio.NewWriter(writeBuffer),
+	}
+
+	err := conn.EchoOn()
+
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+
+	if !bytes.Equal([]byte{IAC, WONT, ECHO, 0}, writeBuffer.Bytes()) {
+		t.Errorf("Unexpected write buffer %v", writeBuffer.Bytes())
+	}
+}
+
+/*** EchoOff tests ***/
+func Test_EchoOff(t *testing.T) {
+	writeBuffer := bytes.NewBuffer([]byte{})
+	conn := &implTelnetConnection{
+		writer: bufio.NewWriter(writeBuffer),
+	}
+
+	err := conn.EchoOff()
+
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+
+	if !bytes.Equal([]byte{IAC, WILL, ECHO, 0}, writeBuffer.Bytes()) {
+		t.Errorf("Unexpected write buffer %v", writeBuffer.Bytes())
+	}
+}

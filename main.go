@@ -54,6 +54,13 @@ func handleConnection(connection net.Conn, world *absmachine.World, logger loggi
 		}
 		fmt.Println("Handling connection here... (TODO)", line, err)
 
+		_ /* command */, err = mudio.Parse(line)
+		if err != nil {
+			playerConnection.connection.WriteLine(err.Error())
+		} else {
+			// TODO: dispatch command to command queue
+		}
+
 		// TODO: Parse and dispatch commands here. Dispatch to a command queue, and have a timer execute commands...?
 		// TODO: reject commands when/if command queue depth is too large to avoid DOS attacks
 		//time.Sleep(1000 * time.Hour)
