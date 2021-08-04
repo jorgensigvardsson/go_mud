@@ -12,6 +12,7 @@ type commandConstructor struct {
 
 var commandConstructors = []commandConstructor{
 	{name: "who", cons: NewCommandWho},
+	{name: "quit", cons: NewCommandQuit},
 }
 
 func InitializeInterpreter() {

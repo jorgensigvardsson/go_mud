@@ -11,6 +11,9 @@ import (
 )
 
 func main() {
+	// Make sure interpreter/commands is initialized
+	mudio.InitializeInterpreter()
+
 	world := absmachine.NewWorld()
 	logger := logging.NewConsoleLogger()
 
@@ -51,23 +54,49 @@ func handleConnection(tcpConnection net.Conn, world *absmachine.World, logger lo
 
 	defer absmachine.DestroyPlayer(player)
 
+	var commandSubPrompter mudio.CommandSubPrompter = nil
+
 	for {
 		// Present prompt
-		connection.WriteStringf("[H:%v] [M:%v] > ", player.Health, player.Mana)
+		if commandSubPrompter != nil {
+			connection.WriteString(commandSubPrompter.Prompt())
 
-		line, err := connection.ReadLine()
+			// Read input from user
+			line, err := connection.ReadLine()
+			if err != nil {
+				fmt.Println("Error reading data from connection ")
+				continue
+			}
 
-		if err != nil {
-			fmt.Println("Error reading data from connection ")
-		}
-		fmt.Println("Handling connection here... (TODO)", line, err)
-
-		command, err := mudio.Parse(line)
-		if err != nil {
-			connection.WriteLine(err.Error())
+			nextCommandSubPrompter, promptError := commandSubPrompter.GiveInput(line, &context)
+			if promptError != nil {
+				connection.WriteLine(promptError.Error())
+			} else {
+				commandSubPrompter = nextCommandSubPrompter
+			}
 		} else {
-			command.Execute(&context)
-			// TODO: dispatch command to command queue
+			connection.WriteStringf("[H:%v] [M:%v] > ", player.Health, player.Mana)
+
+			// Read input from user
+			line, err := connection.ReadLine()
+
+			if err != nil {
+				fmt.Println("Error reading data from connection ")
+				continue
+			}
+
+			command, parseError := mudio.Parse(line)
+			if parseError != nil {
+				connection.WriteLine(parseError.Error())
+			} else {
+				nextCommandSubPrompter, commandError := command.Execute(&context)
+				if commandError != nil {
+					connection.WriteLine(commandError.Error())
+				} else {
+					commandSubPrompter = nextCommandSubPrompter
+				}
+				// TODO: dispatch command to command queue
+			}
 		}
 
 		// TODO: Parse and dispatch commands here. Dispatch to a command queue, and have a timer execute commands...?

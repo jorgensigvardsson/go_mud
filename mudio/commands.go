@@ -15,7 +15,12 @@ func (e *CommandError) Error() string {
 var UnknownCommand = &CommandError{"Unknown command"}
 
 type Command interface {
-	Execute(context *CommandContext) *CommandError
+	Execute(context *CommandContext) (CommandSubPrompter, *CommandError)
+}
+
+type CommandSubPrompter interface {
+	Prompt() string
+	GiveInput(input string, context *CommandContext) (CommandSubPrompter, *CommandError)
 }
 
 type CommandQueue interface {
@@ -29,15 +34,13 @@ type CommandContext struct {
 }
 
 /**** Command: Who ****/
-type CommandWho struct {
-	player *absmachine.Player
-}
+type CommandWho struct{}
 
 func NewCommandWho() Command {
 	return &CommandWho{}
 }
 
-func (command *CommandWho) Execute(context *CommandContext) *CommandError {
+func (command *CommandWho) Execute(context *CommandContext) (CommandSubPrompter, *CommandError) {
 	conn := context.Connection
 
 	conn.WriteLine("Players On-line")
@@ -53,5 +56,16 @@ func (command *CommandWho) Execute(context *CommandContext) *CommandError {
 
 	conn.WriteLine("-------------------------------")
 
-	return nil
+	return nil, nil
+}
+
+/**** Command: Quit ****/
+type CommandQuit struct{}
+
+func NewCommandQuit() Command {
+	return &CommandQuit{}
+}
+
+func (command *CommandQuit) Execute(context *CommandContext) (CommandSubPrompter, *CommandError) {
+	return nil, &CommandError{message: "Not implemented"}
 }
