@@ -38,26 +38,35 @@ func handleConnections(listener net.Listener, world *absmachine.World, logger lo
 	}
 }
 
-func handleConnection(connection net.Conn, world *absmachine.World, logger logging.Logger) {
-	playerConnection, err := handleLogin(connection, world, logger)
+func handleConnection(tcpConnection net.Conn, world *absmachine.World, logger logging.Logger) {
+	player, connection, err := handleLogin(tcpConnection, world, logger)
 	if err != nil {
 		return
 	}
 
-	defer absmachine.DestroyPlayer(playerConnection.player)
+	context := mudio.CommandContext{
+		Player:     player,
+		Connection: connection,
+	}
+
+	defer absmachine.DestroyPlayer(player)
 
 	for {
-		line, err := playerConnection.connection.ReadLine()
+		// Present prompt
+		connection.WriteStringf("[H:%v] [M:%v] > ", player.Health, player.Mana)
+
+		line, err := connection.ReadLine()
 
 		if err != nil {
 			fmt.Println("Error reading data from connection ")
 		}
 		fmt.Println("Handling connection here... (TODO)", line, err)
 
-		_ /* command */, err = mudio.Parse(line)
+		command, err := mudio.Parse(line)
 		if err != nil {
-			playerConnection.connection.WriteLine(err.Error())
+			connection.WriteLine(err.Error())
 		} else {
+			command.Execute(&context)
 			// TODO: dispatch command to command queue
 		}
 
@@ -79,22 +88,20 @@ func (observer *PlayerTelnetConnectionObserver) InvalidCommand(data []byte) {
 	// TODO: Do something with the invalid telnet command!
 }
 
-func handleLogin(connection net.Conn, world *absmachine.World, logger logging.Logger) (*PlayerConnection, error) {
+func handleLogin(connection net.Conn, world *absmachine.World, logger logging.Logger) (*absmachine.Player, mudio.TelnetConnection, error) {
 	playerTelnetConnectionObserver := &PlayerTelnetConnectionObserver{}
 	telnetConnection := mudio.NewTelnetConnection(connection, playerTelnetConnectionObserver, logger)
 
 	showMotd(telnetConnection)
 	player, err := promptLogin(telnetConnection, world)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
+	// Connect connection observer with player, in case we need to know the player when we process
+	// TELNET commands (could be useful for terminal type negotiation, etc)
 	playerTelnetConnectionObserver.player = player
-
-	return &PlayerConnection{
-		player:     player,
-		connection: telnetConnection,
-	}, nil
+	return player, telnetConnection, nil
 }
 
 func showMotd(telnetConnection mudio.TelnetConnection) {
@@ -120,7 +127,7 @@ func promptLogin(telnetConnection mudio.TelnetConnection, world *absmachine.Worl
 	// Need to emit a new line, because echo off will eat the new line on the client end
 	telnetConnection.WriteLine("")
 
-	fmt.Println("Got password", password, password[0], password[1], password[2], password[3])
+	fmt.Println("Got password", password)
 	if err != nil {
 		return nil, err
 	}
@@ -130,10 +137,4 @@ func promptLogin(telnetConnection mudio.TelnetConnection, world *absmachine.Worl
 	player := absmachine.NewPlayer(world)
 	player.Name = username
 	return player, nil
-}
-
-type PlayerConnection struct {
-	player     *absmachine.Player
-	connection mudio.TelnetConnection
-	commands   []*absmachine.Command
 }

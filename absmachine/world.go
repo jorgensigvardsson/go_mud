@@ -30,6 +30,9 @@ type Player struct {
 	Description string
 	Room        *Room
 	World       *World
+	Health      int
+	Mana        int
+	Level       int
 }
 
 type Mob struct {

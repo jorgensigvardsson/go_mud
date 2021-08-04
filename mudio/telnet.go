@@ -2,6 +2,7 @@ package mudio
 
 import (
 	"bufio"
+	"fmt"
 	"net"
 
 	"github.com/jorgensigvardsson/gomud/logging"
@@ -72,7 +73,9 @@ const (
 type TelnetConnection interface {
 	ReadLine() (line string, err error)
 	WriteLine(line string) error
+	WriteLinef(line string, args ...interface{}) error
 	WriteString(text string) error
+	WriteStringf(text string, args ...interface{}) error
 	EchoOff() error
 	EchoOn() error
 }
@@ -207,6 +210,14 @@ func (tconn *implTelnetConnection) WriteLine(line string) error {
 	return tconn.writer.Flush()
 }
 
+func (tconn *implTelnetConnection) WriteLinef(line string, args ...interface{}) error {
+	if len(args) == 0 {
+		return tconn.WriteLine(line)
+	}
+
+	return tconn.WriteLine(fmt.Sprintf(line, args...))
+}
+
 func (tconn *implTelnetConnection) WriteString(text string) error {
 	for _, b := range []byte(text) {
 		err := tconn.writeByte(b)
@@ -216,6 +227,14 @@ func (tconn *implTelnetConnection) WriteString(text string) error {
 	}
 
 	return tconn.writer.Flush()
+}
+
+func (tconn *implTelnetConnection) WriteStringf(text string, args ...interface{}) error {
+	if len(args) == 0 {
+		return tconn.WriteString(text)
+	}
+
+	return tconn.WriteString(fmt.Sprintf(text, args...))
 }
 
 func (tconn *implTelnetConnection) Close() error {
