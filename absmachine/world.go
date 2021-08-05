@@ -13,8 +13,9 @@ const (
 	DirectionWest
 	DirectionUp
 	DirectionDown
-	NumberOfDirections
 )
+
+const NumberOfDirections = 6
 
 type Room struct {
 	Description   string

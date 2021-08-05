@@ -78,6 +78,7 @@ type TelnetConnection interface {
 	WriteStringf(text string, args ...interface{}) error
 	EchoOff() error
 	EchoOn() error
+	Close() error
 }
 
 type implTelnetConnection struct {

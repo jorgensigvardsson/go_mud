@@ -1,6 +1,8 @@
 package mudio
 
 import (
+	"strings"
+
 	"github.com/jorgensigvardsson/gomud/absmachine"
 )
 
@@ -12,15 +14,16 @@ func (e *CommandError) Error() string {
 	return e.message
 }
 
-var UnknownCommand = &CommandError{"Unknown command"}
+var UnknownCommand = CommandError{"Unknown command."}
+var InvalidInput = CommandError{"Invalid input."}
 
 type Command interface {
-	Execute(context *CommandContext) (CommandSubPrompter, *CommandError)
+	Execute(context *CommandContext) (CommandSubPrompter, error)
 }
 
 type CommandSubPrompter interface {
 	Prompt() string
-	GiveInput(input string, context *CommandContext) (CommandSubPrompter, *CommandError)
+	Execute(input string, context *CommandContext) (CommandSubPrompter, error)
 }
 
 type CommandQueue interface {
@@ -29,8 +32,9 @@ type CommandQueue interface {
 }
 
 type CommandContext struct {
-	Player     *absmachine.Player
-	Connection TelnetConnection
+	Player               *absmachine.Player
+	Connection           TelnetConnection
+	TerminationRequested bool
 }
 
 /**** Command: Who ****/
@@ -40,7 +44,7 @@ func NewCommandWho() Command {
 	return &CommandWho{}
 }
 
-func (command *CommandWho) Execute(context *CommandContext) (CommandSubPrompter, *CommandError) {
+func (command *CommandWho) Execute(context *CommandContext) (CommandSubPrompter, error) {
 	conn := context.Connection
 
 	conn.WriteLine("Players On-line")
@@ -61,11 +65,33 @@ func (command *CommandWho) Execute(context *CommandContext) (CommandSubPrompter,
 
 /**** Command: Quit ****/
 type CommandQuit struct{}
+type CommandQuitSubPrompt struct{}
+
+const CommandQuitConfirmationMessage = "Are you sure (y/n)?: "
 
 func NewCommandQuit() Command {
 	return &CommandQuit{}
 }
 
-func (command *CommandQuit) Execute(context *CommandContext) (CommandSubPrompter, *CommandError) {
-	return nil, &CommandError{message: "Not implemented"}
+func (command *CommandQuit) Execute(context *CommandContext) (CommandSubPrompter, error) {
+	return &CommandQuitSubPrompt{}, nil
+}
+
+func (subPrompt *CommandQuitSubPrompt) Prompt() string {
+	return CommandQuitConfirmationMessage
+}
+
+func (subPrompt *CommandQuitSubPrompt) Execute(input string, context *CommandContext) (CommandSubPrompter, error) {
+	lcInput := strings.ToLower(input)
+
+	switch {
+	case strings.HasPrefix("yes", lcInput):
+		context.Connection.WriteLine("Ok, sorry to see you go!")
+		context.TerminationRequested = true
+		return nil, nil
+	case strings.HasPrefix("no", lcInput):
+		return nil, nil
+	default:
+		return subPrompt, &InvalidInput
+	}
 }

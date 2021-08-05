@@ -195,6 +195,15 @@ func (object *Object) RelocateToRoom(room *Room) *LowLevelOpsError {
 	return nil
 }
 
+func (world *World) GetPlayers() []*Player {
+	world.Lock()
+	defer world.Unlock()
+
+	playersCopy := make([]*Player, len(world.Players))
+	copy(playersCopy, world.Players)
+	return playersCopy
+}
+
 // Moves the player in a specific direction
 func (player *Player) Move(direction Direction) *LowLevelOpsError {
 	// Sanity checks!
