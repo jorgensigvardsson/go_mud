@@ -5,7 +5,9 @@ func NewWorld() *World {
 }
 
 func NewPlayer(world *World) *Player {
-	player := &Player{}
+	player := &Player{
+		State: PS_STANDING,
+	}
 	world.Lock()
 	defer world.Unlock()
 	world.Players = append(world.Players, player)

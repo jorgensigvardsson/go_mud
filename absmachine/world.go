@@ -7,22 +7,29 @@ import (
 type Direction int
 
 const (
-	DirectionNorth Direction = iota
-	DirectionSouth
-	DirectionEast
-	DirectionWest
-	DirectionUp
-	DirectionDown
+	DIR_NORTH Direction = iota
+	DIR_SOUTH
+	DIR_EAST
+	DIR_WEST
+	DIR_UP
+	DIR_DOWN
 )
 
-const NumberOfDirections = 6
+const NUM_DIR = 6
+
+type PlayerState uint32
+
+const (
+	PS_STANDING PlayerState = 1 << iota
+	PS_TERMINATING
+)
 
 type Room struct {
 	Description   string
 	Players       []*Player
 	Mobs          []*Mob
 	Objects       []*Object
-	AdjacentRooms [NumberOfDirections]*Room
+	AdjacentRooms [NUM_DIR]*Room
 	World         *World
 }
 
@@ -34,6 +41,7 @@ type Player struct {
 	Health      int
 	Mana        int
 	Level       int
+	State       PlayerState
 }
 
 type Mob struct {
@@ -66,3 +74,8 @@ type RelocatableToRoom interface {
 type DirectionMovable interface {
 	Move(direction Direction) *LowLevelOpsError
 }
+
+func (ps PlayerState) HasFlag(f PlayerState) bool { return f&ps != 0 }
+func (ps *PlayerState) SetFlag(f PlayerState)     { *ps |= f }
+func (ps *PlayerState) ClearFlag(f PlayerState)   { *ps &= ^f }
+func (ps *PlayerState) ToggleFlag(f PlayerState)  { *ps ^= f }

@@ -225,7 +225,7 @@ func Test_Move_NoRoomNorWorld(t *testing.T) {
 	player := &Player{}
 
 	// Act
-	err := player.Move(DirectionDown)
+	err := player.Move(DIR_DOWN)
 
 	// Assert
 	if err == nil {
@@ -241,7 +241,7 @@ func Test_Move_RoomButNoWorld(t *testing.T) {
 	player := &Player{Room: room}
 
 	// Act
-	err := player.Move(DirectionDown)
+	err := player.Move(DIR_DOWN)
 
 	// Assert
 	if err == nil {
@@ -262,7 +262,7 @@ func Test_Move_InvalidDirection(t *testing.T) {
 	player.RelocateToRoom(room)
 
 	// Act
-	err := player.Move(DirectionDown)
+	err := player.Move(DIR_DOWN)
 
 	// Assert
 	if err == nil {
@@ -281,11 +281,11 @@ func Test_Move_ValidDirection(t *testing.T) {
 
 	world.AddRooms([]*Room{room, northRoom})
 	world.AddPlayers([]*Player{player})
-	room.Connect(northRoom, DirectionNorth)
+	room.Connect(northRoom, DIR_NORTH)
 	player.RelocateToRoom(room)
 
 	// Act
-	err := player.Move(DirectionNorth)
+	err := player.Move(DIR_NORTH)
 
 	// Assert
 

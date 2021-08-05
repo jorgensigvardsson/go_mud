@@ -111,8 +111,8 @@ func handleCommands(commandQueue *list.List, currentTick uint64, subPrompts map[
 
 					if commandContext.TerminationRequested {
 						// Terminate player
-						// TODO: Emit some event that others can see (for instance players in the same room, etc)
-						commandContext.Connection.Close()
+						playerInput.player.State.SetFlag(absmachine.PS_TERMINATING)
+						playerInput.connection.Close()
 					}
 				}
 
@@ -177,9 +177,7 @@ func handleConnection(tcpConnection net.Conn, world *absmachine.World, logger lo
 		// Read input from user (must be done asynchronously, because we should print a new prompt if the player is hit!)
 		line, err := connection.ReadLine()
 		if err != nil {
-			if errors.Is(err, net.ErrClosed) {
-				// Connection was closed - who closed it?
-				// TODO: Figure out who closed the socket
+			if errors.Is(err, net.ErrClosed) && player.State.HasFlag(absmachine.PS_TERMINATING) {
 				logger.WriteLine("Disconnecting client")
 			} else {
 				// TODO: Terminate connection
