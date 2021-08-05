@@ -1,7 +1,6 @@
 package main
 
 import (
-	"container/list"
 	"errors"
 	"fmt"
 	"net"
@@ -16,19 +15,12 @@ import (
 
 const TICK = 100 * time.Millisecond
 
-type playerInput struct {
-	tick       uint64
-	player     *absmachine.Player
-	input      string
-	connection mudio.TelnetConnection
-}
-
 func main() {
 	// Make sure interpreter/commands is initialized
 	currentTick := uint64(0)
 	world := absmachine.NewWorld()
 	logger := logging.NewConsoleLogger()
-	commandQueue := list.New()
+	inputQueue := &InputQueue{}
 	subPrompts := make(map[*absmachine.Player]mudio.CommandSubPrompter)
 
 	listener, err := net.Listen("tcp", ":5000")
@@ -37,94 +29,68 @@ func main() {
 		panic("Failed to open TCP port 5000")
 	}
 
-	go handleConnections(listener, world, logger, &currentTick, commandQueue)
+	go handleConnections(listener, world, logger, &currentTick, inputQueue)
 
 	// The game loop!
 	for {
 		time.Sleep(TICK)
-		handleCommands(commandQueue, currentTick, subPrompts)
+		handleCommands(inputQueue, currentTick, subPrompts)
 		atomic.AddUint64(&currentTick, 1)
 	}
 }
 
-func handleCommands(commandQueue *list.List, currentTick uint64, subPrompts map[*absmachine.Player]mudio.CommandSubPrompter) {
-	iterator := commandQueue.Front()
+func handleCommands(inputQueue *InputQueue, currentTick uint64, subPrompts map[*absmachine.Player]mudio.CommandSubPrompter) {
+	inputQueue.ForEachUntilTick(
+		currentTick,
+		func(playerInput *PlayerInput) {
+			// This is what commands and subprompts expect to work with, so let's
+			// whip it up so we can serve it further down
+			commandContext := mudio.CommandContext{
+				Player:     playerInput.player,
+				Connection: playerInput.connection,
+			}
 
-	if iterator == nil {
-		return
-	}
+			var nextSubprompt mudio.CommandSubPrompter = nil
 
-	playersProcessed := make(map[*absmachine.Player]bool)
-	for iterator != nil {
-		playerInput := iterator.Value.(*playerInput)
+			// If there is no input, don't do anything with it
+			if playerInput.input != "" {
+				activeSubprompt, hasActiveSubprompt := subPrompts[playerInput.player]
 
-		// Is the input from before the current tick, or on this tick? If so, then consider it!
-		if playerInput.tick <= currentTick {
-
-			// Has this player already been processed in this loop?
-			_, isProcessedAlready := playersProcessed[playerInput.player]
-			if isProcessedAlready {
-				// Move it forward in time so that this input is processed in the next tick
-				playerInput.tick = currentTick + 1 // No need to atomically
-
-				// Nothing to do, move on!
-				iterator = iterator.Next()
-			} else {
-				var subPrompt mudio.CommandSubPrompter = nil
-				var error error
-				subPrompt, hasActiveSubprompt := subPrompts[playerInput.player]
-
-				// If there is no input, don't do anything with it
-				if playerInput.input != "" {
-					// This is what commands and subprompts expect to work with, so let's
-					// whip it up so we can serve it further down
-					commandContext := mudio.CommandContext{
-						Player:     playerInput.player,
-						Connection: playerInput.connection,
+				if hasActiveSubprompt {
+					// We have an active subprompt, so let it execute
+					subPrompt, error := activeSubprompt.Execute(playerInput.input, &commandContext)
+					if error != nil {
+						playerInput.connection.WriteLine(error.Error())
 					}
 
-					if hasActiveSubprompt {
-						// We have an active subprompt, so let it execute
-						subPrompt, error = subPrompt.Execute(playerInput.input, &commandContext)
-						if error != nil {
-							playerInput.connection.WriteLine(error.Error())
-						}
-
-						// subPrompt may or may not be nil at this point. We're using the error
-						// channel to report things like "invalid input", or whatever, but still
-						// keeping the subprompt open.
+					// subPrompt may or may not be nil at this point. We're using the error
+					// channel to report things like "invalid input", or whatever, but still
+					// keeping the subprompt open.
+					nextSubprompt = subPrompt
+				} else {
+					// We don't have a subprompt, so we'll just have to figure out what command
+					// the user typed in.
+					command, error := mudio.Parse(playerInput.input)
+					if error != nil {
+						// Fat fingers -> show it to the user!
+						playerInput.connection.WriteLine(error.Error())
 					} else {
-						// We don't have a subprompt, so we'll just have to figure out what command
-						// the user typed in.
-						command, error := mudio.Parse(playerInput.input)
+						// We got a command, so let's execute it. It may optionally return a subprompt!
+						nextSubprompt, error = command.Execute(&commandContext)
 						if error != nil {
-							// Fat fingers -> show it to the user!
 							playerInput.connection.WriteLine(error.Error())
-						} else {
-							// We got a command, so let's execute it. It may optionally return a subprompt!
-							subPrompt, error = command.Execute(&commandContext)
-							if error != nil {
-								playerInput.connection.WriteLine(error.Error())
-							}
 						}
-					}
-
-					if commandContext.TerminationRequested {
-						// Terminate player
-						playerInput.player.State.SetFlag(absmachine.PS_TERMINATING)
-						playerInput.connection.Close()
 					}
 				}
+			}
 
-				// Mark as processed already (to make sure no other queued message is touched, even if we didn't process any input!)
-				playersProcessed[playerInput.player] = true
-
-				// Unlink this input and move on to next
-				tempIterator := iterator.Next()
-				commandQueue.Remove(iterator)
-				iterator = tempIterator
-
-				if subPrompt == nil {
+			if commandContext.TerminationRequested {
+				// Terminate player
+				playerInput.player.State.SetFlag(absmachine.PS_TERMINATING)
+				playerInput.connection.Close()
+				delete(subPrompts, playerInput.player)
+			} else {
+				if nextSubprompt == nil {
 					// Show default prompt if we don't have a subprompt
 					playerInput.connection.WriteStringf("[H:%v] [M:%v] > ", playerInput.player.Health, playerInput.player.Mana)
 
@@ -132,20 +98,17 @@ func handleCommands(commandQueue *list.List, currentTick uint64, subPrompts map[
 					delete(subPrompts, playerInput.player)
 				} else {
 					// Show subprompt
-					playerInput.connection.WriteString(subPrompt.Prompt())
+					playerInput.connection.WriteString(nextSubprompt.Prompt())
 
 					// Make sure we remember it!
-					subPrompts[playerInput.player] = subPrompt
+					subPrompts[playerInput.player] = nextSubprompt
 				}
 			}
-		} else {
-			// Nothing to do, check next!
-			iterator = iterator.Next()
-		}
-	}
+		},
+	)
 }
 
-func handleConnections(listener net.Listener, world *absmachine.World, logger logging.Logger, currentTick *uint64, commandQueue *list.List) {
+func handleConnections(listener net.Listener, world *absmachine.World, logger logging.Logger, currentTick *uint64, inputQueue *InputQueue) {
 	for {
 		conn, err := listener.Accept()
 
@@ -154,11 +117,11 @@ func handleConnections(listener net.Listener, world *absmachine.World, logger lo
 			panic(fmt.Sprintf("Error accepting new TCP connections: %v", err))
 		}
 
-		go handleConnection(conn, world, logger, currentTick, commandQueue)
+		go handleConnection(conn, world, logger, currentTick, inputQueue)
 	}
 }
 
-func handleConnection(tcpConnection net.Conn, world *absmachine.World, logger logging.Logger, currentTick *uint64, commandQueue *list.List) {
+func handleConnection(tcpConnection net.Conn, world *absmachine.World, logger logging.Logger, currentTick *uint64, inputQueue *InputQueue) {
 	player, connection, err := handleLogin(tcpConnection, world, logger)
 	if err != nil {
 		return
@@ -166,7 +129,8 @@ func handleConnection(tcpConnection net.Conn, world *absmachine.World, logger lo
 
 	defer absmachine.DestroyPlayer(player)
 
-	commandQueue.PushFront(&playerInput{
+	// Begin with queuing
+	inputQueue.Prepend(&PlayerInput{
 		tick:       0, // Now!
 		player:     player,
 		connection: connection,
@@ -186,7 +150,7 @@ func handleConnection(tcpConnection net.Conn, world *absmachine.World, logger lo
 			return
 		}
 
-		commandQueue.PushBack(&playerInput{
+		inputQueue.Append(&PlayerInput{
 			tick:       atomic.LoadUint64(currentTick),
 			player:     player,
 			input:      strings.TrimSpace(line), // Make sure extraneous whitespaces are removed
@@ -197,6 +161,7 @@ func handleConnection(tcpConnection net.Conn, world *absmachine.World, logger lo
 
 type PlayerTelnetConnectionObserver struct {
 	player *absmachine.Player
+	logger logging.Logger
 }
 
 func (observer *PlayerTelnetConnectionObserver) CommandReceived(command []byte) {
@@ -204,11 +169,11 @@ func (observer *PlayerTelnetConnectionObserver) CommandReceived(command []byte) 
 }
 
 func (observer *PlayerTelnetConnectionObserver) InvalidCommand(data []byte) {
-	// TODO: Do something with the invalid telnet command!
+	observer.logger.WriteLinef("Invalid TELNET command received: %v", data)
 }
 
 func handleLogin(connection net.Conn, world *absmachine.World, logger logging.Logger) (*absmachine.Player, mudio.TelnetConnection, error) {
-	playerTelnetConnectionObserver := &PlayerTelnetConnectionObserver{}
+	playerTelnetConnectionObserver := &PlayerTelnetConnectionObserver{logger: logger}
 	telnetConnection := mudio.NewTelnetConnection(connection, playerTelnetConnectionObserver, logger)
 
 	showMotd(telnetConnection)
@@ -229,6 +194,7 @@ func showMotd(telnetConnection mudio.TelnetConnection) {
 }
 
 func promptLogin(telnetConnection mudio.TelnetConnection, world *absmachine.World) (*absmachine.Player, error) {
+	// TODO: Extend to allow for new registrations of users
 	telnetConnection.WriteString("Username: ")
 
 	username, err := telnetConnection.ReadLine()
