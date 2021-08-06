@@ -1,5 +1,9 @@
 package main
 
+// TODO: If we communicate with the game loop with concurrent channels
+// TODO: then we can make the input queue lock free, as the game loop
+// TODO: will be the only goroutine touching this queue!
+
 import (
 	"container/list"
 	"sync"

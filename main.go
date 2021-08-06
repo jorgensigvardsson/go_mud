@@ -33,8 +33,20 @@ func main() {
 
 	// The game loop!
 	for {
-		time.Sleep(TICK)
+		// Measure how long time we spent processing the commands
+		handleCommandsT0 := time.Now().UTC()
 		handleCommands(inputQueue, currentTick, subPrompts)
+		handleCommandsDelta := handleCommandsT0.Sub(time.Now().UTC())
+
+		// Remove the delta from the TICK length
+		timeToSleep := TICK - handleCommandsDelta
+
+		// If there's time left in this tick period, sleep it!
+		if timeToSleep > 0 {
+			time.Sleep(timeToSleep)
+		}
+
+		// We have completed one tick, so let it be reflected in the currentTick variable!
 		atomic.AddUint64(&currentTick, 1)
 	}
 }
@@ -128,6 +140,12 @@ func handleConnection(tcpConnection net.Conn, world *absmachine.World, logger lo
 	}
 
 	defer absmachine.DestroyPlayer(player)
+
+	// TODO: setup a channel between this goroutine and the game loop
+	// TODO: Let this goroutine allocate the Player object (state = NOT_LOGGED_IN)
+	// TODO: Instead of sending only text input through the channel, make it so that
+	// TODO: it can pass commands as well. Then we can implement the login sequence as
+	// TODO: a command rather than having specialized code in main for that!
 
 	// Begin with queuing
 	inputQueue.Prepend(&PlayerInput{

@@ -1,5 +1,12 @@
 package mudio
 
+// TODO: Break this file up into categories
+// TODO: E.g.:
+// TODO:   commands.go <- contains interface definitions
+// TODO:   commands_movement.go <- contains movement commands
+// TODO:   commands_login.go <- login/logout related commands
+// TODO:   etc.
+
 import (
 	"strings"
 
