@@ -17,15 +17,13 @@ type PlayerInput struct {
 
 type InputQueue struct {
 	lock   sync.Mutex
-	inputs list.List
+	inputs *list.List
 }
 
-func (q *InputQueue) Front() *list.Element {
-	return q.inputs.Front()
-}
-
-func (q *InputQueue) Remove(e *list.Element) interface{} {
-	return q.inputs.Remove(e)
+func NewInputQueue() *InputQueue {
+	return &InputQueue{
+		inputs: list.New(),
+	}
 }
 
 type InputHandler func(playerInput *PlayerInput)

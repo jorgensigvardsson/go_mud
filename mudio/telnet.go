@@ -140,10 +140,13 @@ func (tconn *implTelnetConnection) readByte() (b byte, err error) {
 				state = STATE_NOTHING
 			}
 		case STATE_OPTION_COMMAND:
+			// Option command is IAC <command> <option> <value>, and b = <value>
 			tconn.observer.CommandReceived(append(buf, b))
 			buf = buf[:0]
 			state = STATE_NOTHING
 		case STATE_SUBNEG:
+			// Swallow everything until we reach SE (this is probably wrong, we
+			// should most likely look for IAC SE really... this may be a source of bugs!)
 			switch b {
 			case SE:
 				tconn.observer.CommandReceived(append(buf, b))

@@ -20,7 +20,7 @@ func main() {
 	currentTick := uint64(0)
 	world := absmachine.NewWorld()
 	logger := logging.NewConsoleLogger()
-	inputQueue := &InputQueue{}
+	inputQueue := NewInputQueue()
 	subPrompts := make(map[*absmachine.Player]mudio.CommandSubPrompter)
 
 	listener, err := net.Listen("tcp", ":5000")
