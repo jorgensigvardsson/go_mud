@@ -4,21 +4,15 @@ func NewWorld() *World {
 	return &World{}
 }
 
-func NewPlayer(world *World) *Player {
+func NewPlayer() *Player {
 	player := &Player{
 		State: PS_STANDING,
 	}
-	world.Lock()
-	defer world.Unlock()
-	world.Players = append(world.Players, player)
-	player.World = world
 	return player
 }
 
 func NewRoom(world *World) *Room {
 	room := &Room{}
-	world.Lock()
-	defer world.Unlock()
 	world.Rooms = append(world.Rooms, room)
 	room.World = world
 	return room
@@ -26,8 +20,6 @@ func NewRoom(world *World) *Room {
 
 func NewMob(world *World) *Mob {
 	mob := &Mob{}
-	world.Lock()
-	defer world.Unlock()
 	world.Mobs = append(world.Mobs, mob)
 	mob.World = world
 	return mob
@@ -35,8 +27,6 @@ func NewMob(world *World) *Mob {
 
 func NewObject(world *World) *Object {
 	object := &Object{}
-	world.Lock()
-	defer world.Unlock()
 	world.Objects = append(world.Objects, object)
 	object.World = world
 	return object
@@ -46,9 +36,6 @@ func DestroyPlayer(player *Player) {
 	if player.World == nil {
 		return
 	}
-
-	player.World.Lock()
-	defer player.World.Unlock()
 
 	if player.Room != nil {
 		removePlayerFromRoom(player.Room, player)
@@ -197,15 +184,6 @@ func (object *Object) RelocateToRoom(room *Room) *LowLevelOpsError {
 	return nil
 }
 
-func (world *World) GetPlayers() []*Player {
-	world.Lock()
-	defer world.Unlock()
-
-	playersCopy := make([]*Player, len(world.Players))
-	copy(playersCopy, world.Players)
-	return playersCopy
-}
-
 // Moves the player in a specific direction
 func (player *Player) Move(direction Direction) *LowLevelOpsError {
 	// Sanity checks!
@@ -307,12 +285,4 @@ func removeObjectFromRoom(room *Room, object *Object) *LowLevelOpsError {
 	room.Objects = append(room.Objects[:index], room.Objects[index+1:]...)
 	object.Room = nil
 	return nil
-}
-
-func (world *World) Lock() {
-	world.lock.Lock()
-}
-
-func (world *World) Unlock() {
-	world.lock.Unlock()
 }

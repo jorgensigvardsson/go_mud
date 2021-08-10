@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	"github.com/jorgensigvardsson/gomud/absmachine"
@@ -17,11 +16,11 @@ const TICK = 100 * time.Millisecond
 
 func main() {
 	// Make sure interpreter/commands is initialized
-	currentTick := uint64(0)
 	world := absmachine.NewWorld()
 	logger := logging.NewConsoleLogger()
 	inputQueue := NewInputQueue()
 	subPrompts := make(map[*absmachine.Player]mudio.CommandSubPrompter)
+	commandChannel := make(chan *PlayerInputOrCommand, 500)
 
 	listener, err := net.Listen("tcp", ":5000")
 
@@ -29,35 +28,44 @@ func main() {
 		panic("Failed to open TCP port 5000")
 	}
 
-	go handleConnections(listener, world, logger, &currentTick, inputQueue)
+	go handleConnections(listener, logger, inputQueue, commandChannel)
 
 	// The game loop!
 	for {
 		// Measure how long time we spent processing the commands
 		handleCommandsT0 := time.Now().UTC()
-		handleCommands(inputQueue, currentTick, subPrompts)
-		handleCommandsDelta := handleCommandsT0.Sub(time.Now().UTC())
+		handleCommands(inputQueue, subPrompts, world)
+		handleCommandsT1 := time.Now().UTC()
 
 		// Remove the delta from the TICK length
-		timeToSleep := TICK - handleCommandsDelta
+		timeToSleep := TICK - handleCommandsT0.Sub(handleCommandsT1)
+		timeToWakeup := handleCommandsT1.Add(timeToSleep)
 
-		// If there's time left in this tick period, sleep it!
-		if timeToSleep > 0 {
-			time.Sleep(timeToSleep)
+		// Pump input from command channel onto input queue
+		for timeToSleep > 0 {
+			select {
+			case inputOrCommand := <-commandChannel:
+				inputQueue.Append(inputOrCommand)
+			case <-time.After(timeToSleep):
+				// Do nothing on purpose!
+			}
+
+			// Figure out if we need to sleep more!
+			timeToSleep = timeToWakeup.Sub(time.Now().UTC())
 		}
 
-		// We have completed one tick, so let it be reflected in the currentTick variable!
-		atomic.AddUint64(&currentTick, 1)
+		// We have completed one tick!
+		inputQueue.Tick()
 	}
 }
 
-func handleCommands(inputQueue *InputQueue, currentTick uint64, subPrompts map[*absmachine.Player]mudio.CommandSubPrompter) {
-	inputQueue.ForEachUntilTick(
-		currentTick,
-		func(playerInput *PlayerInput) {
+func handleCommands(inputQueue *InputQueue, subPrompts map[*absmachine.Player]mudio.CommandSubPrompter, world *absmachine.World) {
+	inputQueue.ForEachCurrentTick(
+		func(playerInput *PlayerInputOrCommand) {
 			// This is what commands and subprompts expect to work with, so let's
 			// whip it up so we can serve it further down
 			commandContext := mudio.CommandContext{
+				World:      world,
 				Player:     playerInput.player,
 				Connection: playerInput.connection,
 			}
@@ -65,12 +73,19 @@ func handleCommands(inputQueue *InputQueue, currentTick uint64, subPrompts map[*
 			var nextSubprompt mudio.CommandSubPrompter = nil
 
 			// If there is no input, don't do anything with it
-			if playerInput.input != "" {
+			if playerInput.command != nil {
+				var error error
+				// We got a command, so let's execute it. It may optionally return a subprompt!
+				nextSubprompt, error = playerInput.command.Execute(&commandContext)
+				if error != nil {
+					playerInput.connection.WriteLine(error.Error())
+				}
+			} else if playerInput.input != "" {
 				activeSubprompt, hasActiveSubprompt := subPrompts[playerInput.player]
 
 				if hasActiveSubprompt {
 					// We have an active subprompt, so let it execute
-					subPrompt, error := activeSubprompt.Execute(playerInput.input, &commandContext)
+					subPrompt, error := activeSubprompt.ExecuteSubprompt(playerInput.input, &commandContext)
 					if error != nil {
 						playerInput.connection.WriteLine(error.Error())
 					}
@@ -110,17 +125,28 @@ func handleCommands(inputQueue *InputQueue, currentTick uint64, subPrompts map[*
 					delete(subPrompts, playerInput.player)
 				} else {
 					// Show subprompt
-					playerInput.connection.WriteString(nextSubprompt.Prompt())
+					promptText, error := nextSubprompt.Prompt(&commandContext)
+					if error != nil {
+						playerInput.connection.WriteLine(error.Error())
+					}
 
-					// Make sure we remember it!
-					subPrompts[playerInput.player] = nextSubprompt
+					if !commandContext.TerminationRequested {
+						playerInput.connection.WriteString(promptText)
+						// Make sure we remember it!
+						subPrompts[playerInput.player] = nextSubprompt
+					} else {
+						// Make sure we don't have any dangling subprompt
+						playerInput.player.State.SetFlag(absmachine.PS_TERMINATING)
+						playerInput.connection.Close()
+						delete(subPrompts, playerInput.player)
+					}
 				}
 			}
 		},
 	)
 }
 
-func handleConnections(listener net.Listener, world *absmachine.World, logger logging.Logger, currentTick *uint64, inputQueue *InputQueue) {
+func handleConnections(listener net.Listener, logger logging.Logger, inputQueue *InputQueue, commandChannel chan *PlayerInputOrCommand) {
 	for {
 		conn, err := listener.Accept()
 
@@ -129,31 +155,32 @@ func handleConnections(listener net.Listener, world *absmachine.World, logger lo
 			panic(fmt.Sprintf("Error accepting new TCP connections: %v", err))
 		}
 
-		go handleConnection(conn, world, logger, currentTick, inputQueue)
+		go handleConnection(conn, logger, inputQueue, commandChannel)
 	}
 }
 
-func handleConnection(tcpConnection net.Conn, world *absmachine.World, logger logging.Logger, currentTick *uint64, inputQueue *InputQueue) {
-	player, connection, err := handleLogin(tcpConnection, world, logger)
-	if err != nil {
-		return
-	}
+func handleConnection(tcpConnection net.Conn, logger logging.Logger, inputQueue *InputQueue, commandChannel chan<- *PlayerInputOrCommand) {
+	// TODO: Check if connection is allowed to connect (IP blocks, etc), before wasting too many CPU cycles
 
+	player := absmachine.NewPlayer()
 	defer absmachine.DestroyPlayer(player)
 
-	// TODO: setup a channel between this goroutine and the game loop
-	// TODO: Let this goroutine allocate the Player object (state = NOT_LOGGED_IN)
-	// TODO: Instead of sending only text input through the channel, make it so that
-	// TODO: it can pass commands as well. Then we can implement the login sequence as
-	// TODO: a command rather than having specialized code in main for that!
+	// Whip up a TELNET connection (along with an observer)
+	connection := mudio.NewTelnetConnection(
+		tcpConnection,
+		&PlayerTelnetConnectionObserver{logger: logger, player: player},
+		logger,
+	)
 
-	// Begin with queuing
-	inputQueue.Prepend(&PlayerInput{
-		tick:       0, // Now!
-		player:     player,
+	// Show message of the day to user
+	showMotd(connection)
+
+	// The bootstrapping command: Login!
+	commandChannel <- &PlayerInputOrCommand{
 		connection: connection,
-		input:      "", // Empty input means "no command", and will force the command queue loop to print a prompt!
-	})
+		player:     player,
+		command:    mudio.NewCommandLogin(),
+	}
 
 	for {
 		// Read input from user (must be done asynchronously, because we should print a new prompt if the player is hit!)
@@ -168,12 +195,11 @@ func handleConnection(tcpConnection net.Conn, world *absmachine.World, logger lo
 			return
 		}
 
-		inputQueue.Append(&PlayerInput{
-			tick:       atomic.LoadUint64(currentTick),
-			player:     player,
-			input:      strings.TrimSpace(line), // Make sure extraneous whitespaces are removed
+		commandChannel <- &PlayerInputOrCommand{
 			connection: connection,
-		})
+			player:     player,
+			input:      strings.TrimSpace(line),
+		}
 	}
 }
 
@@ -190,54 +216,7 @@ func (observer *PlayerTelnetConnectionObserver) InvalidCommand(data []byte) {
 	observer.logger.WriteLinef("Invalid TELNET command received: %v", data)
 }
 
-func handleLogin(connection net.Conn, world *absmachine.World, logger logging.Logger) (*absmachine.Player, mudio.TelnetConnection, error) {
-	playerTelnetConnectionObserver := &PlayerTelnetConnectionObserver{logger: logger}
-	telnetConnection := mudio.NewTelnetConnection(connection, playerTelnetConnectionObserver, logger)
-
-	showMotd(telnetConnection)
-	player, err := promptLogin(telnetConnection, world)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	// Connect connection observer with player, in case we need to know the player when we process
-	// TELNET commands (could be useful for terminal type negotiation, etc)
-	playerTelnetConnectionObserver.player = player
-	return player, telnetConnection, nil
-}
-
 func showMotd(telnetConnection mudio.TelnetConnection) {
 	// TODO: Read MOTD from file
 	telnetConnection.WriteLine("Welcome to GO mud!")
-}
-
-func promptLogin(telnetConnection mudio.TelnetConnection, world *absmachine.World) (*absmachine.Player, error) {
-	// TODO: Extend to allow for new registrations of users
-	telnetConnection.WriteString("Username: ")
-
-	username, err := telnetConnection.ReadLine()
-	if err != nil {
-		return nil, err
-	}
-
-	fmt.Println("Got user", username)
-
-	telnetConnection.WriteString("Password: ")
-	telnetConnection.EchoOff()
-	password, err := telnetConnection.ReadLine()
-	telnetConnection.EchoOn()
-
-	// Need to emit a new line, because echo off will eat the new line on the client end
-	telnetConnection.WriteLine("")
-
-	fmt.Println("Got password", password)
-	if err != nil {
-		return nil, err
-	}
-
-	// TODO: Validate username and password
-
-	player := absmachine.NewPlayer(world)
-	player.Name = username
-	return player, nil
 }

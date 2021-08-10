@@ -1,27 +1,27 @@
 package main
 
-// TODO: If we communicate with the game loop with concurrent channels
-// TODO: then we can make the input queue lock free, as the game loop
-// TODO: will be the only goroutine touching this queue!
-
 import (
 	"container/list"
-	"sync"
 
 	"github.com/jorgensigvardsson/gomud/absmachine"
 	"github.com/jorgensigvardsson/gomud/mudio"
 )
 
-type PlayerInput struct {
-	tick       uint64
+type PlayerInputOrCommand struct {
+	connection mudio.TelnetConnection
 	player     *absmachine.Player
 	input      string
-	connection mudio.TelnetConnection
+	command    mudio.Command
+}
+
+type QueueEntry struct {
+	tick           uint64
+	inputOrCommand *PlayerInputOrCommand
 }
 
 type InputQueue struct {
-	lock   sync.Mutex
-	inputs *list.List
+	currentTick uint64
+	inputs      *list.List
 }
 
 func NewInputQueue() *InputQueue {
@@ -30,12 +30,9 @@ func NewInputQueue() *InputQueue {
 	}
 }
 
-type InputHandler func(playerInput *PlayerInput)
+type InputHandler func(playerInput *PlayerInputOrCommand)
 
-func (q *InputQueue) ForEachUntilTick(tick uint64, handler InputHandler) {
-	q.lock.Lock()
-	defer q.lock.Unlock()
-
+func (q *InputQueue) ForEachCurrentTick(handler InputHandler) {
 	iterator := q.inputs.Front()
 
 	if iterator == nil {
@@ -44,23 +41,23 @@ func (q *InputQueue) ForEachUntilTick(tick uint64, handler InputHandler) {
 
 	playersProcessed := make(map[*absmachine.Player]bool)
 	for iterator != nil {
-		playerInput := iterator.Value.(*PlayerInput)
+		queuedPlayerInputOrCommand := iterator.Value.(*QueueEntry)
 
 		// Is the input from before the current tick, or on this tick? If so, then consider it!
-		if playerInput.tick <= tick {
+		if queuedPlayerInputOrCommand.tick <= q.currentTick {
 			// Has this player already been processed in this loop?
-			_, isProcessedAlready := playersProcessed[playerInput.player]
+			_, isProcessedAlready := playersProcessed[queuedPlayerInputOrCommand.inputOrCommand.player]
 			if isProcessedAlready {
 				// Move it forward in time so that this input is processed in the next tick
-				playerInput.tick = tick + 1
+				queuedPlayerInputOrCommand.tick = q.currentTick + 1
 
 				// Nothing to do, move on!
 				iterator = iterator.Next()
 			} else {
-				handler(playerInput)
+				handler(queuedPlayerInputOrCommand.inputOrCommand)
 
 				// Mark as processed already (to make sure no other queued message is touched, even if we didn't process any input!)
-				playersProcessed[playerInput.player] = true
+				playersProcessed[queuedPlayerInputOrCommand.inputOrCommand.player] = true
 
 				// Unlink this input and move on to next
 				tempIterator := iterator.Next()
@@ -74,16 +71,13 @@ func (q *InputQueue) ForEachUntilTick(tick uint64, handler InputHandler) {
 	}
 }
 
-func (q *InputQueue) Append(input *PlayerInput) {
-	q.lock.Lock()
-	defer q.lock.Unlock()
-
-	q.inputs.PushBack(input)
+func (q *InputQueue) Append(inputOrCommand *PlayerInputOrCommand) {
+	q.inputs.PushBack(&QueueEntry{
+		tick:           q.currentTick,
+		inputOrCommand: inputOrCommand,
+	})
 }
 
-func (q *InputQueue) Prepend(input *PlayerInput) {
-	q.lock.Lock()
-	defer q.lock.Unlock()
-
-	q.inputs.PushFront(input)
+func (q *InputQueue) Tick() {
+	q.currentTick++
 }

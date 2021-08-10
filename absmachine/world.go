@@ -1,9 +1,5 @@
 package absmachine
 
-import (
-	"sync"
-)
-
 type Direction int
 
 const (
@@ -22,6 +18,7 @@ type PlayerState uint32
 const (
 	PS_STANDING PlayerState = 1 << iota
 	PS_TERMINATING
+	PS_LOGGED_IN
 )
 
 type Room struct {
@@ -56,8 +53,6 @@ type World struct {
 	Players []*Player
 	Mobs    []*Mob
 	Objects []*Object
-
-	lock sync.Mutex
 }
 
 type Object struct {

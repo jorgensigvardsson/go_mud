@@ -29,8 +29,8 @@ type Command interface {
 }
 
 type CommandSubPrompter interface {
-	Prompt() string
-	Execute(input string, context *CommandContext) (CommandSubPrompter, error)
+	Prompt(context *CommandContext) (string, error)
+	ExecuteSubprompt(input string, context *CommandContext) (CommandSubPrompter, error)
 }
 
 type CommandQueue interface {
@@ -39,6 +39,7 @@ type CommandQueue interface {
 }
 
 type CommandContext struct {
+	World                *absmachine.World
 	Player               *absmachine.Player
 	Connection           TelnetConnection
 	TerminationRequested bool
@@ -81,14 +82,14 @@ func NewCommandQuit() Command {
 }
 
 func (command *CommandQuit) Execute(context *CommandContext) (CommandSubPrompter, error) {
-	return &CommandQuitSubPrompt{}, nil
+	return command, nil
 }
 
-func (subPrompt *CommandQuitSubPrompt) Prompt() string {
-	return CommandQuitConfirmationMessage
+func (command *CommandQuit) Prompt(context *CommandContext) (string, error) {
+	return CommandQuitConfirmationMessage, nil
 }
 
-func (subPrompt *CommandQuitSubPrompt) Execute(input string, context *CommandContext) (CommandSubPrompter, error) {
+func (command *CommandQuit) ExecuteSubprompt(input string, context *CommandContext) (CommandSubPrompter, error) {
 	lcInput := strings.ToLower(input)
 
 	switch {
@@ -99,6 +100,6 @@ func (subPrompt *CommandQuitSubPrompt) Execute(input string, context *CommandCon
 	case strings.HasPrefix("no", lcInput):
 		return nil, nil
 	default:
-		return subPrompt, &InvalidInput
+		return command, &InvalidInput
 	}
 }

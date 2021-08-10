@@ -37,7 +37,7 @@ func isObjectInRoom(room *Room, object *Object) bool {
 func Test_Player_RelocateToRoom_NotInPreviousRoom(t *testing.T) {
 	// Arrange
 	world := NewWorld()
-	player := NewPlayer(world)
+	player := NewPlayer()
 	room := NewRoom(world)
 	world.AddRooms([]*Room{room})
 	world.AddPlayers([]*Player{player})
@@ -67,7 +67,7 @@ func Test_Player_RelocateToRoom_InPreviousRoom(t *testing.T) {
 	world := NewWorld()
 	room1 := NewRoom(world)
 	room2 := NewRoom(world)
-	player := NewPlayer(world)
+	player := NewPlayer()
 	world.AddPlayers([]*Player{player})
 	world.AddRooms([]*Room{room1, room2})
 	player.RelocateToRoom(room1)
@@ -255,7 +255,7 @@ func Test_Move_InvalidDirection(t *testing.T) {
 	// Arrange
 	world := NewWorld()
 	room := NewRoom(world)
-	player := NewPlayer(world)
+	player := NewPlayer()
 
 	world.AddRooms([]*Room{room})
 	world.AddPlayers([]*Player{player})
@@ -277,7 +277,7 @@ func Test_Move_ValidDirection(t *testing.T) {
 	world := NewWorld()
 	northRoom := NewRoom(world)
 	room := NewRoom(world)
-	player := NewPlayer(world)
+	player := NewPlayer()
 
 	world.AddRooms([]*Room{room, northRoom})
 	world.AddPlayers([]*Player{player})
