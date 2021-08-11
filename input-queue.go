@@ -2,82 +2,162 @@ package main
 
 import (
 	"container/list"
+	"errors"
 
 	"github.com/jorgensigvardsson/gomud/absmachine"
 	"github.com/jorgensigvardsson/gomud/mudio"
 )
 
-type PlayerInputOrCommand struct {
-	connection mudio.TelnetConnection
-	player     *absmachine.Player
-	input      string
-	command    mudio.Command
+type PlayerEvent int
+
+const (
+	PE_Nothing PlayerEvent = iota
+	PE_Exited
+)
+
+type PlayerInput struct {
+	connection         mudio.TelnetConnection
+	player             *absmachine.Player
+	text               string
+	command            mudio.Command
+	errorReturnChannel chan<- error
+	event              PlayerEvent
 }
 
-type QueueEntry struct {
-	tick           uint64
-	inputOrCommand *PlayerInputOrCommand
+type PlayerQueue struct {
+	inputs         *list.List
+	currentCommand mudio.Command
 }
 
-type InputQueue struct {
-	currentTick uint64
-	inputs      *list.List
-}
-
-func NewInputQueue() *InputQueue {
-	return &InputQueue{
+func newPlayerQueue() *PlayerQueue {
+	return &PlayerQueue{
 		inputs: list.New(),
 	}
 }
 
-type InputHandler func(playerInput *PlayerInputOrCommand)
+type InputQueue struct {
+	playerQueues             map[*absmachine.Player]*PlayerQueue
+	maxPlayerLimit           int
+	maxPlayerInputQueueLimit int
+}
 
-func (q *InputQueue) ForEachCurrentTick(handler InputHandler) {
-	iterator := q.inputs.Front()
-
-	if iterator == nil {
-		return
+func NewInputQueue(maxPlayerLimit int, maxPlayerInputQueueLimit int) *InputQueue {
+	return &InputQueue{
+		playerQueues:             make(map[*absmachine.Player]*PlayerQueue),
+		maxPlayerLimit:           maxPlayerLimit,
+		maxPlayerInputQueueLimit: maxPlayerInputQueueLimit,
 	}
+}
 
-	playersProcessed := make(map[*absmachine.Player]bool)
-	for iterator != nil {
-		queuedPlayerInputOrCommand := iterator.Value.(*QueueEntry)
+func (q *InputQueue) Execute(world *absmachine.World) {
+	for player, pq := range q.playerQueues {
+		if pq.inputs.Len() == 0 {
+			continue
+		}
 
-		// Is the input from before the current tick, or on this tick? If so, then consider it!
-		if queuedPlayerInputOrCommand.tick <= q.currentTick {
-			// Has this player already been processed in this loop?
-			_, isProcessedAlready := playersProcessed[queuedPlayerInputOrCommand.inputOrCommand.player]
-			if isProcessedAlready {
-				// Move it forward in time so that this input is processed in the next tick
-				queuedPlayerInputOrCommand.tick = q.currentTick + 1
+		input := pq.inputs.Front().Value.(*PlayerInput)
+		pq.inputs.Remove(pq.inputs.Front())
 
-				// Nothing to do, move on!
-				iterator = iterator.Next()
-			} else {
-				handler(queuedPlayerInputOrCommand.inputOrCommand)
+		if input.event != PE_Nothing {
+			// If it's an event (rather than input/command),
+			// then handle it and go on with the next player queue
+			q.handleEvent(input)
+			continue
+		}
 
-				// Mark as processed already (to make sure no other queued message is touched, even if we didn't process any input!)
-				playersProcessed[queuedPlayerInputOrCommand.inputOrCommand.player] = true
+		var command mudio.Command
+		var err error
 
-				// Unlink this input and move on to next
-				tempIterator := iterator.Next()
-				q.inputs.Remove(iterator)
-				iterator = tempIterator
+		if pq.currentCommand != nil {
+			command = pq.currentCommand
+		} else if input.command != nil {
+			command = input.command
+		} else if input.text != "" {
+			command, err = mudio.ParseCommand(input.text)
+
+			if err != nil {
+				input.connection.WriteLine(err.Error())
+
+				// Player typed in something that was not recognized as a command, so just show a prompt and continue
+				showNormalPrompt(input.connection, player)
+				continue
 			}
 		} else {
-			// Nothing to do, check next!
-			iterator = iterator.Next()
+			// Show the prompt and continue
+			showNormalPrompt(input.connection, player)
+			continue
+		}
+
+		commandContext := mudio.CommandContext{
+			World:      world,
+			Player:     player,
+			Connection: input.connection,
+			Input:      input.text,
+		}
+
+		result, err := command.Execute(&commandContext)
+
+		if err != nil {
+			// We had an error, so let's show that to the user!
+			input.connection.WriteLine(err.Error())
+		}
+
+		if result.TerminatationRequested {
+			// Termination requested! Let's pass it off to the input handling routine
+			input.errorReturnChannel <- ErrPlayerQuit
+			// We're done here, so let's make sure the current command is done
+			pq.currentCommand = nil
+		} else {
+			// Command wants to show a prompt? Then do it
+			if result.Prompt != "" {
+				input.connection.WriteString(result.Prompt)
+			}
+
+			if result.Continue {
+				// Command wants to continue execution, so let's save it for the next inputs
+				pq.currentCommand = command
+			} else {
+				// We're done here, so let's make sure the current command is done
+				pq.currentCommand = nil
+				showNormalPrompt(input.connection, player)
+			}
 		}
 	}
 }
 
-func (q *InputQueue) Append(inputOrCommand *PlayerInputOrCommand) {
-	q.inputs.PushBack(&QueueEntry{
-		tick:           q.currentTick,
-		inputOrCommand: inputOrCommand,
-	})
+func (q *InputQueue) handleEvent(input *PlayerInput) {
+	switch input.event {
+	case PE_Exited:
+		// Player exited, so remove it from the world
+		absmachine.DestroyPlayer(input.player)
+		delete(q.playerQueues, input.player)
+	}
 }
 
-func (q *InputQueue) Tick() {
-	q.currentTick++
+var ErrPlayerQuit = errors.New("player quit")
+var ErrTooManyPlayers = errors.New("too many players connected")
+var ErrTooMuchInput = errors.New("too many players connected")
+
+func (q *InputQueue) Append(inputOrCommand *PlayerInput) {
+	pq, ok := q.playerQueues[inputOrCommand.player]
+	if !ok {
+		if len(q.playerQueues)+1 > q.maxPlayerLimit { // Would adding one player queue go above the limit?
+			inputOrCommand.errorReturnChannel <- ErrTooManyPlayers // Signal I/O routine
+			return
+		}
+
+		pq = newPlayerQueue()
+		q.playerQueues[inputOrCommand.player] = pq
+	}
+
+	if pq.inputs.Len()+1 > q.maxPlayerInputQueueLimit { // Would adding one more input go above the limit?
+		inputOrCommand.errorReturnChannel <- ErrTooMuchInput
+		return
+	}
+
+	pq.inputs.PushBack(inputOrCommand)
+}
+
+func showNormalPrompt(connection mudio.TelnetConnection, player *absmachine.Player) {
+	connection.WriteStringf("[H:%v] [M:%v] > ", player.Health, player.Mana)
 }

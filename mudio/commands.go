@@ -13,36 +13,32 @@ import (
 	"github.com/jorgensigvardsson/gomud/absmachine"
 )
 
-type CommandError struct {
-	message string
+const InvalidInput = "Invalid input."
+
+var CommandFinished = CommandResult{}
+
+func ContinueWithPrompt(prompt string) CommandResult {
+	return CommandResult{
+		Prompt:   prompt,
+		Continue: true,
+	}
 }
 
-func (e *CommandError) Error() string {
-	return e.message
+type CommandResult struct {
+	Prompt                 string
+	Continue               bool
+	TerminatationRequested bool
 }
-
-var UnknownCommand = CommandError{"Unknown command."}
-var InvalidInput = CommandError{"Invalid input."}
 
 type Command interface {
-	Execute(context *CommandContext) (CommandSubPrompter, error)
-}
-
-type CommandSubPrompter interface {
-	Prompt(context *CommandContext) (string, error)
-	ExecuteSubprompt(input string, context *CommandContext) (CommandSubPrompter, error)
-}
-
-type CommandQueue interface {
-	Enqueue(command Command)
-	Dequeue() Command
+	Execute(context *CommandContext) (result CommandResult, err error)
 }
 
 type CommandContext struct {
-	World                *absmachine.World
-	Player               *absmachine.Player
-	Connection           TelnetConnection
-	TerminationRequested bool
+	Input      string
+	World      *absmachine.World
+	Player     *absmachine.Player
+	Connection TelnetConnection
 }
 
 /**** Command: Who ****/
@@ -52,7 +48,7 @@ func NewCommandWho() Command {
 	return &CommandWho{}
 }
 
-func (command *CommandWho) Execute(context *CommandContext) (CommandSubPrompter, error) {
+func (command *CommandWho) Execute(context *CommandContext) (CommandResult, error) {
 	conn := context.Connection
 
 	conn.WriteLine("Players On-line")
@@ -68,12 +64,13 @@ func (command *CommandWho) Execute(context *CommandContext) (CommandSubPrompter,
 
 	conn.WriteLine("-------------------------------")
 
-	return nil, nil
+	return CommandFinished, nil
 }
 
 /**** Command: Quit ****/
-type CommandQuit struct{}
-type CommandQuitSubPrompt struct{}
+type CommandQuit struct {
+	isHandlingPrompt bool
+}
 
 const CommandQuitConfirmationMessage = "Are you sure (y/n)?: "
 
@@ -81,25 +78,23 @@ func NewCommandQuit() Command {
 	return &CommandQuit{}
 }
 
-func (command *CommandQuit) Execute(context *CommandContext) (CommandSubPrompter, error) {
-	return command, nil
-}
+func (command *CommandQuit) Execute(context *CommandContext) (CommandResult, error) {
+	if !command.isHandlingPrompt {
+		// First execution, do nothing, but prompt user!
+		command.isHandlingPrompt = true
+		return ContinueWithPrompt(CommandQuitConfirmationMessage), nil
+	}
 
-func (command *CommandQuit) Prompt(context *CommandContext) (string, error) {
-	return CommandQuitConfirmationMessage, nil
-}
-
-func (command *CommandQuit) ExecuteSubprompt(input string, context *CommandContext) (CommandSubPrompter, error) {
-	lcInput := strings.ToLower(input)
+	// If we get here, we are handling the input from the prompt
+	lcInput := strings.ToLower(context.Input)
 
 	switch {
 	case strings.HasPrefix("yes", lcInput):
 		context.Connection.WriteLine("Ok, sorry to see you go!")
-		context.TerminationRequested = true
-		return nil, nil
+		return CommandResult{TerminatationRequested: true}, nil
 	case strings.HasPrefix("no", lcInput):
-		return nil, nil
+		return CommandResult{}, nil
 	default:
-		return command, &InvalidInput
+		return ContinueWithPrompt(InvalidInput), nil
 	}
 }

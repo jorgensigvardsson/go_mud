@@ -1,5 +1,7 @@
 package absmachine
 
+import "strings"
+
 func NewWorld() *World {
 	return &World{}
 }
@@ -42,6 +44,16 @@ func DestroyPlayer(player *Player) {
 	}
 
 	removePlayerFromWorld(player.World, player)
+}
+
+func (world *World) HasPlayer(name string) bool {
+	for _, v := range world.Players {
+		if strings.EqualFold(v.Name, name) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // Adds a set of rooms to a world. None of the rooms may be associated with a world already!

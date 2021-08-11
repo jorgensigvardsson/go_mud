@@ -17,7 +17,6 @@ type PlayerState uint32
 
 const (
 	PS_STANDING PlayerState = 1 << iota
-	PS_TERMINATING
 	PS_LOGGED_IN
 )
 

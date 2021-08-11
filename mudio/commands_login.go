@@ -1,13 +1,18 @@
 package mudio
 
-import "github.com/jorgensigvardsson/gomud/absmachine"
+import (
+	"fmt"
+
+	"github.com/jorgensigvardsson/gomud/absmachine"
+)
 
 /**** Command: Login ****/
 type LoginState int
 
 const (
-	LOGIN_STATE_USERNAME LoginState = iota
-	LOGIN_STATE_PASSWORD
+	LS_Initial LoginState = iota
+	LS_WantUsername
+	LS_WantPassword
 )
 
 type CommandLogin struct {
@@ -16,42 +21,32 @@ type CommandLogin struct {
 }
 
 func NewCommandLogin() Command {
-	return &CommandLogin{state: LOGIN_STATE_USERNAME}
+	return &CommandLogin{state: LS_Initial}
 }
 
-func (command *CommandLogin) Execute(context *CommandContext) (CommandSubPrompter, error) {
-	return command, nil
-}
-
-func (command *CommandLogin) Prompt(context *CommandContext) (string, error) {
+func (command *CommandLogin) Execute(context *CommandContext) (CommandResult, error) {
 	switch command.state {
-	case LOGIN_STATE_USERNAME:
-		return "Username: ", nil
-	case LOGIN_STATE_PASSWORD:
-		return "Password: ", nil
-	default:
-		context.TerminationRequested = true
-		return "", &CommandError{"Unknown error occurred, preventing you from logging in."}
-	}
-}
-
-func (command *CommandLogin) ExecuteSubprompt(input string, context *CommandContext) (CommandSubPrompter, error) {
-	switch command.state {
-	case LOGIN_STATE_USERNAME:
-		command.username = input
-		command.state = LOGIN_STATE_PASSWORD
+	case LS_Initial:
+		command.state = LS_WantUsername
+		return ContinueWithPrompt("Username: "), nil
+	case LS_WantUsername:
+		command.username = context.Input
+		command.state = LS_WantPassword
 		context.Connection.EchoOff()
-		return command, nil
-	case LOGIN_STATE_PASSWORD:
-		// TODO: Validate username and password!
+		fmt.Println("Got name", command.username)
+		return ContinueWithPrompt("Password: "), nil
+	case LS_WantPassword:
+		context.Connection.EchoOn()
+		context.Connection.WriteLine("") // Emit new line, because echo off "stole it" when the user entered password
+
+		if context.World.HasPlayer(command.username) {
+			return CommandResult{TerminatationRequested: true}, &CommandError{"You are already logged in from another computer."}
+		}
 		context.Player.Name = command.username
 		context.Player.State.SetFlag(absmachine.PS_LOGGED_IN)
 		context.World.AddPlayers([]*absmachine.Player{context.Player})
-		context.Connection.EchoOn()
-		context.Connection.WriteLine("") // Emit new line, because echo off "stole it" when the user entered password
-		return nil, nil
+		return CommandFinished, nil
 	default:
-		context.TerminationRequested = true
-		return nil, &CommandError{"Unknown error occurred, preventing you from logging in."}
+		return CommandResult{TerminatationRequested: true}, &CommandError{fmt.Sprintf("Unknown state reached: %v, preventing player from logging in.", command.state)}
 	}
 }
