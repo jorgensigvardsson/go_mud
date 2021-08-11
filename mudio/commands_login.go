@@ -33,7 +33,6 @@ func (command *CommandLogin) Execute(context *CommandContext) (CommandResult, er
 		command.username = context.Input
 		command.state = LS_WantPassword
 		context.Connection.EchoOff()
-		fmt.Println("Got name", command.username)
 		return ContinueWithPrompt("Password: "), nil
 	case LS_WantPassword:
 		context.Connection.EchoOn()
