@@ -2,9 +2,12 @@ package main
 
 import (
 	"errors"
-	"fmt"
 	"net"
+	"os"
+	"os/signal"
 	"strings"
+	"sync"
+	"syscall"
 	"time"
 
 	"github.com/jorgensigvardsson/gomud/absmachine"
@@ -19,22 +22,40 @@ const MAX_PLAYER_INPUT_QUEUE_LIMIT = 20
 func main() {
 	// Make sure interpreter/commands is initialized
 	world := absmachine.NewWorld()
-	logger := logging.NewConsoleLogger()
+	logger := logging.NewTimestampLoggerDecorator(
+		logging.NewSynchronizingLoggerDecorator(
+			logging.NewConsoleLogger(),
+			50,
+		),
+	)
 	inputQueue := NewInputQueue(MAX_USER_LIMIT, MAX_PLAYER_INPUT_QUEUE_LIMIT)
 	commandChannel := make(chan *PlayerInput, MAX_USER_LIMIT*MAX_PLAYER_INPUT_QUEUE_LIMIT)
-	defer close(commandChannel)
+	sigtermChannel := make(chan os.Signal)
+	connectionsStopChannel := make(chan interface{})
+	listenerErrorChannel := make(chan error, 1)
+	workGroup := sync.WaitGroup{}
 
+	defer close(commandChannel)
+	defer close(sigtermChannel)
+	defer logger.Close()
+
+	logger.Println("Starting up Go MUD on port 5000...")
 	listener, err := net.Listen("tcp", ":5000")
 
 	if err != nil {
 		panic("Failed to open TCP port 5000")
 	}
 
+	// Setup SIGTERM handler
+	signal.Notify(sigtermChannel, os.Interrupt, syscall.SIGTERM)
+	logger.Println("Stop server with Ctrl+C (SIGTERM)")
+
 	// Spin off in a go routine to handle connections
-	go handleConnections(listener, logger, commandChannel)
+	go handleConnections(listener, logger, commandChannel, listenerErrorChannel, connectionsStopChannel, &workGroup)
 
 	// The game loop!
-	for {
+	run := true
+	for run {
 		// Measure how long time we spent processing the commands
 		handleCommandsT0 := time.Now().UTC()
 		inputQueue.Execute(world)
@@ -51,28 +72,55 @@ func main() {
 				inputQueue.Append(inputOrCommand)
 			case <-time.After(timeToSleep):
 				// Do nothing on purpose!
+			case <-sigtermChannel:
+				logger.Println("Shutting down...")
+				run = false
+			case err := <-listenerErrorChannel:
+				logger.Printlnf("Accepting TCP connections failed: %v", err.Error())
+				run = false
 			}
 
 			// Figure out if we need to sleep more!
 			timeToSleep = timeToWakeup.Sub(time.Now().UTC())
 		}
 	}
+
+	// Shut everything down!
+	listener.Close()
+
+	// Terminate all connected
+	close(connectionsStopChannel)
+
+	// Wait for all go routines to stop
+	workGroup.Wait()
+
+	// Now we're no longer accepting new connections, and all existing sessions have been closed
+
+	// TODO: Serialize current state of world!
+
+	logger.Println("Go MUD successfully shut down.")
 }
 
-func handleConnections(listener net.Listener, logger logging.Logger, commandChannel chan *PlayerInput) {
+func handleConnections(listener net.Listener, logger logging.Logger, commandChannel chan<- *PlayerInput, listenerErrorChannel chan<- error, connectionsStopChannel <-chan interface{}, wg *sync.WaitGroup) {
+	wg.Add(1)
+	defer wg.Done()
+
 	for {
 		conn, err := listener.Accept()
 
 		if err != nil {
-			// TODO: Better error handling!
-			panic(fmt.Sprintf("Error accepting new TCP connections: %v", err))
+			listenerErrorChannel <- err
+			return
 		}
 
-		go handleConnection(conn, logger, commandChannel)
+		go handleConnection(conn, logger, commandChannel, connectionsStopChannel, wg)
 	}
 }
 
-func handleConnection(tcpConnection net.Conn, logger logging.Logger, commandChannel chan<- *PlayerInput) {
+func handleConnection(tcpConnection net.Conn, logger logging.Logger, commandChannel chan<- *PlayerInput, connectionsStopChannel <-chan interface{}, wg *sync.WaitGroup) {
+	wg.Add(1)
+	defer wg.Done()
+
 	// TODO: Check if connection is allowed to connect (IP blocks, etc), before wasting too many CPU cycles
 	player := absmachine.NewPlayer()
 	errorReturnChannel := make(chan error, 1)
@@ -89,9 +137,6 @@ func handleConnection(tcpConnection net.Conn, logger logging.Logger, commandChan
 	)
 	defer connection.Close()
 
-	// Show message of the day to user
-	showMotd(connection)
-
 	// The bootstrapping command: Login!
 	commandChannel <- &PlayerInput{
 		connection:         connection,
@@ -104,14 +149,15 @@ func handleConnection(tcpConnection net.Conn, logger logging.Logger, commandChan
 	go readLine(connection, lineInputChannel)
 
 	finished := false
-	for !finished {
+	stopped := false
+	for !finished && !stopped {
 		select {
 		case lineInput := <-lineInputChannel:
 			if lineInput.err != nil {
 				if errors.Is(lineInput.err, net.ErrClosed) {
-					logger.WriteLine("Disconnecting client")
+					logger.Println("Disconnecting client")
 				} else {
-					logger.WriteLinef("Error reading data from player connection: %v", lineInput.err)
+					logger.Printlnf("Error reading data from player connection: %v", lineInput.err)
 				}
 				finished = true
 			} else {
@@ -133,9 +179,13 @@ func handleConnection(tcpConnection net.Conn, logger logging.Logger, commandChan
 			case ErrTooMuchInput:
 				connection.WriteLine("Input limit reached, please back off with commands for a while.")
 			default:
-				logger.WriteLinef("Aborting player connection for %v due to error: %v", player.Name, err.Error())
+				logger.Printlnf("Aborting player connection for %v due to error: %v", player.Name, err.Error())
 				finished = true
 			}
+		case _, isOpen := <-connectionsStopChannel:
+			// We've been stopped!
+			connection.WriteLine("Shutting down server...")
+			stopped = !isOpen
 		}
 	}
 
@@ -176,10 +226,5 @@ func (observer *PlayerTelnetConnectionObserver) CommandReceived(command []byte) 
 }
 
 func (observer *PlayerTelnetConnectionObserver) InvalidCommand(data []byte) {
-	observer.logger.WriteLinef("Invalid TELNET command received: %v", data)
-}
-
-func showMotd(telnetConnection mudio.TelnetConnection) {
-	// TODO: Read MOTD from file
-	telnetConnection.WriteLine("Welcome to GO mud!")
+	observer.logger.Printlnf("Invalid TELNET command received: %v", data)
 }

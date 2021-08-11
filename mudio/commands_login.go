@@ -27,6 +27,8 @@ func NewCommandLogin(args []string) Command {
 func (command *CommandLogin) Execute(context *CommandContext) (CommandResult, error) {
 	switch command.state {
 	case LS_Initial:
+		// Show message of the day to user
+		showMotd(context.Connection)
 		command.state = LS_WantUsername
 		return ContinueWithPrompt("Username: "), nil
 	case LS_WantUsername:
@@ -48,4 +50,9 @@ func (command *CommandLogin) Execute(context *CommandContext) (CommandResult, er
 	default:
 		return CommandResult{TerminatationRequested: true}, &CommandError{fmt.Sprintf("Unknown state reached: %v, preventing player from logging in.", command.state)}
 	}
+}
+
+func showMotd(telnetConnection TelnetConnection) {
+	// TODO: Read MOTD from file
+	telnetConnection.WriteLine("Welcome to GO mud!")
 }
