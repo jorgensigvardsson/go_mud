@@ -29,6 +29,8 @@ var commandConstructors = []commandConstructor{
 	{name: "quit", cons: NewCommandQuit},
 }
 
+type CommandParser = func(text string) (command Command, err error)
+
 func ParseCommand(text string) (command Command, err error) {
 	for _, commandConstructor := range commandConstructors {
 		if strings.HasPrefix(commandConstructor.name, text) {

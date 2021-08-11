@@ -13,6 +13,7 @@ type PlayerEvent int
 const (
 	PE_Nothing PlayerEvent = iota
 	PE_Exited
+	PE_EventCount
 )
 
 type PlayerInput struct {
@@ -36,6 +37,7 @@ func newPlayerQueue() *PlayerQueue {
 }
 
 type InputQueue struct {
+	commandParser            mudio.CommandParser
 	playerQueues             map[*absmachine.Player]*PlayerQueue
 	maxPlayerLimit           int
 	maxPlayerInputQueueLimit int
@@ -43,6 +45,7 @@ type InputQueue struct {
 
 func NewInputQueue(maxPlayerLimit int, maxPlayerInputQueueLimit int) *InputQueue {
 	return &InputQueue{
+		commandParser:            mudio.ParseCommand,
 		playerQueues:             make(map[*absmachine.Player]*PlayerQueue),
 		maxPlayerLimit:           maxPlayerLimit,
 		maxPlayerInputQueueLimit: maxPlayerInputQueueLimit,
@@ -73,7 +76,7 @@ func (q *InputQueue) Execute(world *absmachine.World) {
 		} else if input.command != nil {
 			command = input.command
 		} else if input.text != "" {
-			command, err = mudio.ParseCommand(input.text)
+			command, err = q.commandParser(input.text)
 
 			if err != nil {
 				input.connection.WriteLine(err.Error())
