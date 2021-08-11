@@ -433,7 +433,7 @@ func Test_Execute_PlayerHasNoCurrentCommand_InvalidInput_ErrorAndStandardPromptW
 	q.Execute(world)
 
 	// Assert
-	if conn.writtenText != "foo\r\n[H:0] [M:0] > " {
+	if conn.writtenText != "Error: foo\r\n[H:0] [M:0] > " {
 		t.Errorf("Unexpected output sent to player connection: %v", conn.writtenText)
 	}
 }

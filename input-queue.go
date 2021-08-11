@@ -79,7 +79,7 @@ func (q *InputQueue) Execute(world *absmachine.World) {
 			command, err = q.commandParser(input.text)
 
 			if err != nil {
-				input.connection.WriteLine(err.Error())
+				input.connection.WriteLinef("Error: %v", err.Error())
 
 				// Player typed in something that was not recognized as a command, so just show a prompt and continue
 				showNormalPrompt(input.connection, player)

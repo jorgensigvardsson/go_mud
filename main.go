@@ -96,7 +96,7 @@ func handleConnection(tcpConnection net.Conn, logger logging.Logger, commandChan
 	commandChannel <- &PlayerInput{
 		connection:         connection,
 		player:             player,
-		command:            mudio.NewCommandLogin(),
+		command:            mudio.NewCommandLogin([]string{}),
 		errorReturnChannel: errorReturnChannel,
 	}
 

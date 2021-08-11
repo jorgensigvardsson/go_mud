@@ -41,10 +41,18 @@ type CommandContext struct {
 	Connection TelnetConnection
 }
 
+type CommandError struct {
+	message string
+}
+
+func (e *CommandError) Error() string {
+	return e.message
+}
+
 /**** Command: Who ****/
 type CommandWho struct{}
 
-func NewCommandWho() Command {
+func NewCommandWho(args []string) Command {
 	return &CommandWho{}
 }
 
@@ -69,16 +77,22 @@ func (command *CommandWho) Execute(context *CommandContext) (CommandResult, erro
 
 /**** Command: Quit ****/
 type CommandQuit struct {
+	args             []string
 	isHandlingPrompt bool
 }
 
 const CommandQuitConfirmationMessage = "Are you sure (y/n)?: "
 
-func NewCommandQuit() Command {
-	return &CommandQuit{}
+func NewCommandQuit(args []string) Command {
+	return &CommandQuit{args: args}
 }
 
 func (command *CommandQuit) Execute(context *CommandContext) (CommandResult, error) {
+	if len(command.args) > 0 && strings.ToLower(command.args[0]) == "now" {
+		context.Connection.WriteLine("Wow, what a hurry! Ok, sorry to see you go!")
+		return CommandResult{TerminatationRequested: true}, nil
+	}
+
 	if !command.isHandlingPrompt {
 		// First execution, do nothing, but prompt user!
 		command.isHandlingPrompt = true

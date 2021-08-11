@@ -20,7 +20,7 @@ type CommandLogin struct {
 	state    LoginState
 }
 
-func NewCommandLogin() Command {
+func NewCommandLogin(args []string) Command {
 	return &CommandLogin{state: LS_Initial}
 }
 
