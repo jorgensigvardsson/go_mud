@@ -1,36 +1,20 @@
-package main
+package io
 
 import (
 	"container/list"
 	"errors"
+	"fmt"
 
 	"github.com/jorgensigvardsson/gomud/absmachine"
 	"github.com/jorgensigvardsson/gomud/logging"
 	"github.com/jorgensigvardsson/gomud/mudio"
 )
 
-type PlayerEvent int
-
-const (
-	PE_Nothing PlayerEvent = iota
-	PE_Exited
-	PE_EventCount
-)
-
-type PlayerInput struct {
-	connection         mudio.TelnetConnection
-	player             *absmachine.Player
-	text               string
-	command            mudio.Command
-	errorReturnChannel chan<- error
-	event              PlayerEvent
-}
-
 type PlayerQueue struct {
 	inputs             *list.List
 	currentCommand     mudio.Command
 	errorReturnChannel chan<- error
-	connection         mudio.TelnetConnection
+	outputChannel      chan<- *PlayerOutput
 }
 
 func newPlayerQueue() *PlayerQueue {
@@ -84,30 +68,32 @@ func (q *InputQueue) Execute(world *absmachine.World) {
 			command, err = q.commandParser(input.text)
 
 			if err != nil {
-				pq.connection.WriteLinef("Error: %v", err.Error())
-
+				pq.outputChannel <- PrintlnfOutput("Error: %v", err.Error())
 				// Player typed in something that was not recognized as a command, so just show a prompt and continue
-				showNormalPrompt(pq.connection, player)
+				pq.outputChannel <- PrintOutput(normalPrompt(player))
 				continue
 			}
 		} else {
 			// Show the prompt and continue
-			showNormalPrompt(pq.connection, player)
+			pq.outputChannel <- PrintOutput(normalPrompt(player))
 			continue
 		}
 
 		commandContext := mudio.CommandContext{
-			World:      world,
-			Player:     player,
-			Connection: pq.connection,
-			Input:      input.text,
+			World:  world,
+			Player: player,
+			Input:  input.text,
 		}
 
 		result, err := command.Execute(&commandContext)
 
 		if err != nil {
 			// We had an error, so let's show that to the user!
-			pq.connection.WriteLine(err.Error())
+			pq.outputChannel <- PrintlnOutput(err.Error())
+		}
+
+		if result.Output != "" {
+			pq.outputChannel <- PrintOutput(result.Output)
 		}
 
 		if result.TerminatationRequested {
@@ -118,17 +104,14 @@ func (q *InputQueue) Execute(world *absmachine.World) {
 		} else {
 			// Command wants to show a prompt? Then do it
 			if result.Prompt != "" {
-				pq.connection.WriteString(result.Prompt)
-			}
-
-			if result.Continue {
-				// Command wants to continue execution, so let's save it for the next inputs
+				pq.outputChannel <- PrintOutput(result.Prompt)
+				// Command wants to continue execution (it is showing a prompt!), so let's save it for the next inputs
 				pq.currentCommand = command
 				player.State.SetFlag(absmachine.PS_BUSY) // If a command wants to continue executing, then the player is busy
 			} else {
 				// We're done here, so let's make sure the current command is done
 				pq.currentCommand = nil
-				showNormalPrompt(pq.connection, player)
+				pq.outputChannel <- PrintOutput(normalPrompt(player))
 				player.State.ClearFlag(absmachine.PS_BUSY) // If the command is complete, then the player is no longer busy
 			}
 
@@ -138,10 +121,17 @@ func (q *InputQueue) Execute(world *absmachine.World) {
 				if !found {
 					q.logger.Printlnf("Tried to send response to player %v from player %v, but receiving player does not have a queue!", response.Player.Name, player.Name)
 				} else {
-					pq.connection.WriteLine("")                      // Emit a new line in order to clear the prompt on screen
-					pq.connection.WriteLine(response.Text)           // Then the response text
-					showNormalPrompt(pq.connection, response.Player) // And finally show the prompt again
+					pq.outputChannel <- PrintlnOutput("")                 // Emit a new line in order to clear the prompt on screen
+					pq.outputChannel <- PrintlnOutput(response.Text)      // Then the response text
+					pq.outputChannel <- PrintOutput(normalPrompt(player)) // And finally show the prompt again
 				}
+			}
+
+			// Echo handling!
+			if result.TurnOffEcho {
+				pq.outputChannel <- &PlayerOutput{echoState: ES_Off}
+			} else if result.TurnOnEcho {
+				pq.outputChannel <- &PlayerOutput{echoState: ES_On}
 			}
 		}
 	}
@@ -162,8 +152,8 @@ var ErrTooMuchInput = errors.New("too many players connected")
 var ErrMissingCommInformation = errors.New("no communication information")
 
 func (q *InputQueue) Append(inputOrCommand *PlayerInput) {
-	if inputOrCommand.connection == nil || inputOrCommand.errorReturnChannel == nil {
-		panic("No error return channel or connection passed onto Append!")
+	if inputOrCommand.outputChannel == nil || inputOrCommand.errorReturnChannel == nil {
+		panic("No error return channel or output channel passed onto Append!")
 	}
 
 	pq, ok := q.playerQueues[inputOrCommand.player]
@@ -183,12 +173,11 @@ func (q *InputQueue) Append(inputOrCommand *PlayerInput) {
 	}
 
 	// Make sure we remember the communication channels!
-	pq.connection = inputOrCommand.connection
 	pq.errorReturnChannel = inputOrCommand.errorReturnChannel
-
+	pq.outputChannel = inputOrCommand.outputChannel
 	pq.inputs.PushBack(inputOrCommand)
 }
 
-func showNormalPrompt(connection mudio.TelnetConnection, player *absmachine.Player) {
-	connection.WriteStringf("[H:%v] [M:%v] > ", player.Health, player.Mana)
+func normalPrompt(player *absmachine.Player) string {
+	return fmt.Sprintf("[H:%v] [M:%v] > ", player.Health, player.Mana)
 }

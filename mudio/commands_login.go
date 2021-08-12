@@ -27,32 +27,26 @@ func NewCommandLogin(args []string) Command {
 func (command *CommandLogin) Execute(context *CommandContext) (CommandResult, *CommandError) {
 	switch command.state {
 	case LS_Initial:
-		// Show message of the day to user
-		showMotd(context.Connection)
+		// Show message of the day to user and set command's state to LS_WantUsername
 		command.state = LS_WantUsername
-		return ContinueWithPrompt("Username: "), nil
+		return CommandResult{Prompt: "Username: ", Output: "Welcome to GO mud!\r\n" /* TODO: Read from file */}, nil
 	case LS_WantUsername:
 		command.username = context.Input
 		command.state = LS_WantPassword
-		context.Connection.EchoOff()
-		return ContinueWithPrompt("Password: "), nil
+		return CommandResult{Prompt: "Password: ", TurnOffEcho: true}, nil
 	case LS_WantPassword:
-		context.Connection.EchoOn()
-		context.Connection.WriteLine("") // Emit new line, because echo off "stole it" when the user entered password
-
 		if context.World.HasPlayer(command.username) {
-			return CommandResult{TerminatationRequested: true}, &CommandError{"You are already logged in from another computer."}
+			return CommandResult{
+				TerminatationRequested: true,
+				TurnOnEcho:             true,
+				Output:                 "\r\n", /* Because echo off "stole" the new line from the user */
+			}, &CommandError{"You are already logged in from another computer."}
 		}
 		context.Player.Name = command.username
 		context.Player.State.SetFlag(absmachine.PS_LOGGED_IN)
 		context.World.AddPlayers([]*absmachine.Player{context.Player})
-		return CommandFinished, nil
+		return CommandResult{Output: "\r\n", TurnOnEcho: true}, nil /* Because echo off "stole" the new line from the user */
 	default:
 		return CommandResult{TerminatationRequested: true}, &CommandError{fmt.Sprintf("Unknown state reached: %v, preventing player from logging in.", command.state)}
 	}
-}
-
-func showMotd(telnetConnection TelnetConnection) {
-	// TODO: Read MOTD from file
-	telnetConnection.WriteLine("Welcome to GO mud!")
 }

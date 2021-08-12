@@ -1,12 +1,5 @@
 package mudio
 
-// TODO: Break this file up into categories
-// TODO: E.g.:
-// TODO:   commands.go <- contains interface definitions
-// TODO:   commands_movement.go <- contains movement commands
-// TODO:   commands_login.go <- login/logout related commands
-// TODO:   etc.
-
 import (
 	"strings"
 
@@ -15,29 +8,18 @@ import (
 
 const InvalidInput = "Invalid input."
 
-var CommandFinished = CommandResult{}
-
 type CommandResponse struct {
 	Player *absmachine.Player
 	Text   string
 }
 
-func CommandFinishedWithResponses(responses []CommandResponse) CommandResult {
-	return CommandResult{Responses: responses}
-}
-
-func ContinueWithPrompt(prompt string) CommandResult {
-	return CommandResult{
-		Prompt:   prompt,
-		Continue: true,
-	}
-}
-
 type CommandResult struct {
 	Prompt                 string
-	Continue               bool
 	TerminatationRequested bool
 	Responses              []CommandResponse
+	Output                 string
+	TurnOffEcho            bool
+	TurnOnEcho             bool
 }
 
 type Command interface {
@@ -45,10 +27,9 @@ type Command interface {
 }
 
 type CommandContext struct {
-	Input      string
-	World      *absmachine.World
-	Player     *absmachine.Player
-	Connection TelnetConnection // TODO: Work to remove direct access to the telnet connection in the context!
+	Input  string
+	World  *absmachine.World
+	Player *absmachine.Player
 }
 
 type CommandError struct {
@@ -71,22 +52,22 @@ func NewCommandWho(args []string) Command {
 }
 
 func (command *CommandWho) Execute(context *CommandContext) (CommandResult, *CommandError) {
-	conn := context.Connection
+	b := buffer{}
 
-	conn.WriteLine("Players On-line")
-	conn.WriteLine("-------------------------------")
+	b.Println("Players On-line")
+	b.Println("-------------------------------")
 
 	for _, player := range context.Player.World.Players {
 		suffix := ""
 		if player == context.Player {
 			suffix = " (You!)"
 		}
-		conn.WriteLinef("[%v] %v%v", player.Level, player.Name, suffix)
+		b.Printlnf("[%v] %v%v", player.Level, player.Name, suffix)
 	}
 
-	conn.WriteLine("-------------------------------")
+	b.Println("-------------------------------")
 
-	return CommandFinished, nil
+	return CommandResult{Output: b.ToString()}, nil
 }
 
 /**** Command: Quit ****/
@@ -103,14 +84,13 @@ func NewCommandQuit(args []string) Command {
 
 func (command *CommandQuit) Execute(context *CommandContext) (CommandResult, *CommandError) {
 	if len(command.args) > 0 && strings.ToLower(command.args[0]) == "now" {
-		context.Connection.WriteLine("Wow, what a hurry! Ok, sorry to see you go!")
-		return CommandResult{TerminatationRequested: true}, nil
+		return CommandResult{Output: "Wow, what a hurry! Ok, sorry to see you go!\r\n", TerminatationRequested: true}, nil
 	}
 
 	if !command.isHandlingPrompt {
 		// First execution, do nothing, but prompt user!
 		command.isHandlingPrompt = true
-		return ContinueWithPrompt(CommandQuitConfirmationMessage), nil
+		return CommandResult{Prompt: CommandQuitConfirmationMessage}, nil
 	}
 
 	// If we get here, we are handling the input from the prompt
@@ -118,11 +98,10 @@ func (command *CommandQuit) Execute(context *CommandContext) (CommandResult, *Co
 
 	switch {
 	case strings.HasPrefix("yes", lcInput):
-		context.Connection.WriteLine("Ok, sorry to see you go!")
-		return CommandResult{TerminatationRequested: true}, nil
+		return CommandResult{Output: "Ok, sorry to see you go!\r\n", TerminatationRequested: true}, nil
 	case strings.HasPrefix("no", lcInput):
 		return CommandResult{}, nil
 	default:
-		return ContinueWithPrompt(InvalidInput), nil
+		return CommandResult{Prompt: InvalidInput}, nil
 	}
 }

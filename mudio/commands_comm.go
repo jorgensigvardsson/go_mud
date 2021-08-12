@@ -17,25 +17,25 @@ func NewCommandTell(args []string) Command {
 
 func (command *CommandTell) Execute(context *CommandContext) (CommandResult, *CommandError) {
 	if len(command.args) == 0 {
-		return CommandFinished, &CommandError{"Who are you talking to?"}
+		return CommandResult{}, &CommandError{"Who are you talking to?"}
 	}
 
 	otherPlayer := context.World.FindPlayerByName(command.args[0])
 
 	if otherPlayer == context.Player {
-		return CommandFinished, &CommandError{"Talking to yourself??"}
+		return CommandResult{}, &CommandError{"Talking to yourself??"}
 	}
 
 	if otherPlayer == nil {
-		return CommandFinished, &CommandError{fmt.Sprintf("Nobody with the name %v is online right now...", command.args[0])}
+		return CommandResult{}, &CommandError{fmt.Sprintf("Nobody with the name %v is online right now...", command.args[0])}
 	}
 
 	if otherPlayer.State.HasFlag(absmachine.PS_BUSY) {
-		return CommandFinished, &CommandError{fmt.Sprintf("%v is busy.", otherPlayer.Name)}
+		return CommandResult{}, &CommandError{fmt.Sprintf("%v is busy.", otherPlayer.Name)}
 	}
 
 	if len(command.args) == 1 {
-		return CommandFinished, &CommandError{fmt.Sprintf("Tell %v what?", otherPlayer.Name)}
+		return CommandResult{}, &CommandError{fmt.Sprintf("Tell %v what?", otherPlayer.Name)}
 	}
 
 	// Ok, so we've done some basic checks here, and now we're ready to execute.
@@ -47,17 +47,17 @@ func (command *CommandTell) Execute(context *CommandContext) (CommandResult, *Co
 	// The third argument is what the player wants to say
 
 	if err != nil {
-		return CommandFinished, &CommandError{"Something went wrong here..."}
+		return CommandResult{}, &CommandError{"Something went wrong here..."}
 	}
 
 	// We got the verbatim text, so let's push it to the other user!
-	return CommandFinishedWithResponses(
-			[]CommandResponse{
+	return CommandResult{
+			Responses: []CommandResponse{
 				{
 					Player: otherPlayer,
 					Text:   fmt.Sprintf("%v tells you: %v", context.Player.Name, args[2]),
 				},
 			},
-		),
+		},
 		nil
 }

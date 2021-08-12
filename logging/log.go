@@ -217,7 +217,6 @@ func (log *timestampDecoratorLogger) Close() {
 	log.onNewLine = true
 }
 
-// TODO: Log using channels!
 func (log *synchronizingLogger) Println(args ...interface{}) {
 	log.logChannel <- logEntry{
 		t:    let_Println,
