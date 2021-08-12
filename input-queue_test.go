@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/jorgensigvardsson/gomud/absmachine"
+	"github.com/jorgensigvardsson/gomud/logging"
 	"github.com/jorgensigvardsson/gomud/mudio"
 )
 
@@ -56,7 +57,7 @@ func (conn *FakeTelnetConnection) EchoOn() error  { panic("EchoOn not implemente
 func (conn *FakeTelnetConnection) Close() error   { panic("Close not implemented") }
 
 func Test_Append_PlayerLimitIsRespected(t *testing.T) {
-	q := NewInputQueue(1, 1)
+	q := NewInputQueue(1, 1, logging.NewNullLogger())
 	p1 := absmachine.NewPlayer()
 	p2 := absmachine.NewPlayer()
 	errorChannel1 := make(chan error, 10)
@@ -69,6 +70,7 @@ func Test_Append_PlayerLimitIsRespected(t *testing.T) {
 		&PlayerInput{
 			player:             p1,
 			text:               "cmd",
+			connection:         &FakeTelnetConnection{},
 			errorReturnChannel: errorChannel1,
 		},
 	)
@@ -77,6 +79,7 @@ func Test_Append_PlayerLimitIsRespected(t *testing.T) {
 		&PlayerInput{
 			player:             p2,
 			text:               "cmd",
+			connection:         &FakeTelnetConnection{},
 			errorReturnChannel: errorChannel2,
 		},
 	)
@@ -98,7 +101,7 @@ func Test_Append_PlayerLimitIsRespected(t *testing.T) {
 }
 
 func Test_Append_PlayerInputLimitIsRespected(t *testing.T) {
-	q := NewInputQueue(1, 1)
+	q := NewInputQueue(1, 1, logging.NewNullLogger())
 	p := absmachine.NewPlayer()
 	errorChannel := make(chan error, 10)
 
@@ -109,6 +112,7 @@ func Test_Append_PlayerInputLimitIsRespected(t *testing.T) {
 			player:             p,
 			text:               "cmd 1",
 			errorReturnChannel: errorChannel,
+			connection:         &FakeTelnetConnection{},
 		},
 	)
 
@@ -117,6 +121,7 @@ func Test_Append_PlayerInputLimitIsRespected(t *testing.T) {
 			player:             p,
 			text:               "cmd 2",
 			errorReturnChannel: errorChannel,
+			connection:         &FakeTelnetConnection{},
 		},
 	)
 
@@ -132,7 +137,7 @@ func Test_Append_PlayerInputLimitIsRespected(t *testing.T) {
 
 func Test_Execute_NoInput_NoEffect(t *testing.T) {
 	// Arrange
-	q := NewInputQueue(10, 10)
+	q := NewInputQueue(10, 10, logging.NewNullLogger())
 	player := absmachine.NewPlayer()
 	world := absmachine.NewWorld()
 
@@ -153,7 +158,7 @@ func Test_Execute_NoInput_NoEffect(t *testing.T) {
 
 func Test_Execute_PlayersHaveBeenAdded_ButHasNoInput_NoEffect(t *testing.T) {
 	// Arrange
-	q := NewInputQueue(10, 10)
+	q := NewInputQueue(10, 10, logging.NewNullLogger())
 	player := absmachine.NewPlayer()
 	world := absmachine.NewWorld()
 
@@ -175,14 +180,16 @@ func Test_Execute_PlayersHaveBeenAdded_ButHasNoInput_NoEffect(t *testing.T) {
 
 func Test_Execute_PlayerHasEvent_PE_Exited_PlayerIsRemovedFromWorld(t *testing.T) {
 	// Arrange
-	q := NewInputQueue(10, 10)
+	q := NewInputQueue(10, 10, logging.NewNullLogger())
 	player := absmachine.NewPlayer()
 	world := absmachine.NewWorld()
 
 	world.AddPlayers([]*absmachine.Player{player})
 	q.Append(&PlayerInput{
-		player: player,
-		event:  PE_Exited,
+		player:             player,
+		event:              PE_Exited,
+		errorReturnChannel: make(chan<- error, 1),
+		connection:         &FakeTelnetConnection{},
 	})
 
 	// Act
@@ -196,14 +203,16 @@ func Test_Execute_PlayerHasEvent_PE_Exited_PlayerIsRemovedFromWorld(t *testing.T
 
 func Test_Execute_PlayerHasEvent_UnknownEvent_NoEffect(t *testing.T) {
 	// Arrange
-	q := NewInputQueue(10, 10)
+	q := NewInputQueue(10, 10, logging.NewNullLogger())
 	player := absmachine.NewPlayer()
 	world := absmachine.NewWorld()
 
 	world.AddPlayers([]*absmachine.Player{player})
 	q.Append(&PlayerInput{
-		player: player,
-		event:  PE_EventCount + 1,
+		player:             player,
+		event:              PE_EventCount + 1,
+		errorReturnChannel: make(chan<- error, 1),
+		connection:         &FakeTelnetConnection{},
 	})
 
 	// Act
@@ -221,11 +230,11 @@ func Test_Execute_PlayerHasEvent_UnknownEvent_NoEffect(t *testing.T) {
 
 type FakeCommand struct {
 	receivedContext *mudio.CommandContext
-	returnError     error
+	returnError     *mudio.CommandError
 	returnResult    mudio.CommandResult
 }
 
-func (cmd *FakeCommand) Execute(context *mudio.CommandContext) (result mudio.CommandResult, err error) {
+func (cmd *FakeCommand) Execute(context *mudio.CommandContext) (result mudio.CommandResult, err *mudio.CommandError) {
 	cmd.receivedContext = context
 	return cmd.returnResult, cmd.returnError
 }
@@ -233,15 +242,16 @@ func (cmd *FakeCommand) Execute(context *mudio.CommandContext) (result mudio.Com
 func Test_Execute_NoInput_StandardPromptWrittenToConnection(t *testing.T) {
 	// Arrange
 	conn := &FakeTelnetConnection{}
-	q := NewInputQueue(10, 10)
+	q := NewInputQueue(10, 10, logging.NewNullLogger())
 	player := absmachine.NewPlayer()
 	world := absmachine.NewWorld()
 
 	world.AddPlayers([]*absmachine.Player{player})
 
 	q.Append(&PlayerInput{
-		player:     player,
-		connection: conn,
+		player:             player,
+		connection:         conn,
+		errorReturnChannel: make(chan<- error, 1),
 	})
 
 	// Act
@@ -256,7 +266,7 @@ func Test_Execute_NoInput_StandardPromptWrittenToConnection(t *testing.T) {
 func Test_Execute_PlayerHasCurrentCommand_InputIsSentToCurrentCommand_CommandFinished(t *testing.T) {
 	// Arrange
 	conn := &FakeTelnetConnection{}
-	q := NewInputQueue(10, 10)
+	q := NewInputQueue(10, 10, logging.NewNullLogger())
 	player := absmachine.NewPlayer()
 	world := absmachine.NewWorld()
 	currentCommand := FakeCommand{
@@ -269,9 +279,10 @@ func Test_Execute_PlayerHasCurrentCommand_InputIsSentToCurrentCommand_CommandFin
 	q.playerQueues[player].currentCommand = &currentCommand
 
 	q.Append(&PlayerInput{
-		player:     player,
-		text:       "cmd text",
-		connection: conn,
+		player:             player,
+		text:               "cmd text",
+		errorReturnChannel: make(chan<- error, 1),
+		connection:         conn,
 	})
 
 	// Act
@@ -290,11 +301,11 @@ func Test_Execute_PlayerHasCurrentCommand_InputIsSentToCurrentCommand_CommandFin
 func Test_Execute_PlayerHasCurrentCommand_InputIsSentToCurrentCommand_CommandErrorsAreWrittenToConnection(t *testing.T) {
 	// Arrange
 	conn := &FakeTelnetConnection{}
-	q := NewInputQueue(10, 10)
+	q := NewInputQueue(10, 10, logging.NewNullLogger())
 	player := absmachine.NewPlayer()
 	world := absmachine.NewWorld()
 	currentCommand := FakeCommand{
-		returnError:  errors.New("foo"),
+		returnError:  mudio.NewCommandError("foo"),
 		returnResult: mudio.CommandFinished,
 	}
 
@@ -303,9 +314,10 @@ func Test_Execute_PlayerHasCurrentCommand_InputIsSentToCurrentCommand_CommandErr
 	q.playerQueues[player].currentCommand = &currentCommand
 
 	q.Append(&PlayerInput{
-		player:     player,
-		text:       "cmd text",
-		connection: conn,
+		player:             player,
+		text:               "cmd text",
+		connection:         conn,
+		errorReturnChannel: make(chan<- error, 1),
 	})
 
 	// Act
@@ -328,7 +340,7 @@ func Test_Execute_PlayerHasCurrentCommand_InputIsSentToCurrentCommand_CommandErr
 func Test_Execute_PlayerHasCurrentCommand_InputIsSentToCurrentCommand_CommandWantsToContinue(t *testing.T) {
 	// Arrange
 	conn := &FakeTelnetConnection{}
-	q := NewInputQueue(10, 10)
+	q := NewInputQueue(10, 10, logging.NewNullLogger())
 	player := absmachine.NewPlayer()
 	world := absmachine.NewWorld()
 	currentCommand := FakeCommand{
@@ -341,9 +353,10 @@ func Test_Execute_PlayerHasCurrentCommand_InputIsSentToCurrentCommand_CommandWan
 	q.playerQueues[player].currentCommand = &currentCommand
 
 	q.Append(&PlayerInput{
-		player:     player,
-		text:       "cmd text",
-		connection: conn,
+		player:             player,
+		text:               "cmd text",
+		connection:         conn,
+		errorReturnChannel: make(chan<- error, 1),
 	})
 
 	// Act
@@ -366,7 +379,7 @@ func Test_Execute_PlayerHasCurrentCommand_InputIsSentToCurrentCommand_CommandWan
 func Test_Execute_PlayerHasCurrentCommand_InputIsSentToCurrentCommand_CommandWantsToTerminate(t *testing.T) {
 	// Arrange
 	conn := &FakeTelnetConnection{}
-	q := NewInputQueue(10, 10)
+	q := NewInputQueue(10, 10, logging.NewNullLogger())
 	player := absmachine.NewPlayer()
 	world := absmachine.NewWorld()
 	currentCommand := FakeCommand{
@@ -413,7 +426,7 @@ func Test_Execute_PlayerHasCurrentCommand_InputIsSentToCurrentCommand_CommandWan
 func Test_Execute_PlayerHasNoCurrentCommand_InvalidInput_ErrorAndStandardPromptWrittenToConnection(t *testing.T) {
 	// Arrange
 	conn := &FakeTelnetConnection{}
-	q := NewInputQueue(10, 10)
+	q := NewInputQueue(10, 10, logging.NewNullLogger())
 	player := absmachine.NewPlayer()
 	world := absmachine.NewWorld()
 
@@ -424,9 +437,10 @@ func Test_Execute_PlayerHasNoCurrentCommand_InvalidInput_ErrorAndStandardPromptW
 	world.AddPlayers([]*absmachine.Player{player})
 
 	q.Append(&PlayerInput{
-		player:     player,
-		text:       "gargksjdl",
-		connection: conn,
+		player:             player,
+		text:               "gargksjdl",
+		connection:         conn,
+		errorReturnChannel: make(chan<- error, 1),
 	})
 
 	// Act
@@ -441,7 +455,7 @@ func Test_Execute_PlayerHasNoCurrentCommand_InvalidInput_ErrorAndStandardPromptW
 func Test_Execute_PlayerHasNoCurrentCommand_InputIsSentToParsedCommand_CommandFinished(t *testing.T) {
 	// Arrange
 	conn := &FakeTelnetConnection{}
-	q := NewInputQueue(10, 10)
+	q := NewInputQueue(10, 10, logging.NewNullLogger())
 	player := absmachine.NewPlayer()
 	world := absmachine.NewWorld()
 	fakeCommand := FakeCommand{
@@ -456,9 +470,10 @@ func Test_Execute_PlayerHasNoCurrentCommand_InputIsSentToParsedCommand_CommandFi
 	world.AddPlayers([]*absmachine.Player{player})
 
 	q.Append(&PlayerInput{
-		player:     player,
-		text:       "cmd text",
-		connection: conn,
+		player:             player,
+		text:               "cmd text",
+		connection:         conn,
+		errorReturnChannel: make(chan<- error, 1),
 	})
 
 	// Act
@@ -481,11 +496,11 @@ func Test_Execute_PlayerHasNoCurrentCommand_InputIsSentToParsedCommand_CommandFi
 func Test_Execute_PlayerHasNoCurrentCommand_InputIsSentToParsedCommand_CommandErrorsAreWrittenToConnection(t *testing.T) {
 	// Arrange
 	conn := &FakeTelnetConnection{}
-	q := NewInputQueue(10, 10)
+	q := NewInputQueue(10, 10, logging.NewNullLogger())
 	player := absmachine.NewPlayer()
 	world := absmachine.NewWorld()
 	fakeCommand := FakeCommand{
-		returnError:  errors.New("foo"),
+		returnError:  mudio.NewCommandError("foo"),
 		returnResult: mudio.CommandFinished,
 	}
 
@@ -496,9 +511,10 @@ func Test_Execute_PlayerHasNoCurrentCommand_InputIsSentToParsedCommand_CommandEr
 	world.AddPlayers([]*absmachine.Player{player})
 
 	q.Append(&PlayerInput{
-		player:     player,
-		text:       "cmd text",
-		connection: conn,
+		player:             player,
+		text:               "cmd text",
+		connection:         conn,
+		errorReturnChannel: make(chan<- error, 1),
 	})
 
 	// Act
@@ -521,7 +537,7 @@ func Test_Execute_PlayerHasNoCurrentCommand_InputIsSentToParsedCommand_CommandEr
 func Test_Execute_PlayerHasNoCurrentCommand_InputIsSentToParsedCommand_CommandWantsToContinue(t *testing.T) {
 	// Arrange
 	conn := &FakeTelnetConnection{}
-	q := NewInputQueue(10, 10)
+	q := NewInputQueue(10, 10, logging.NewNullLogger())
 	player := absmachine.NewPlayer()
 	world := absmachine.NewWorld()
 	fakeCommand := FakeCommand{
@@ -536,9 +552,10 @@ func Test_Execute_PlayerHasNoCurrentCommand_InputIsSentToParsedCommand_CommandWa
 	world.AddPlayers([]*absmachine.Player{player})
 
 	q.Append(&PlayerInput{
-		player:     player,
-		text:       "cmd text",
-		connection: conn,
+		player:             player,
+		text:               "cmd text",
+		connection:         conn,
+		errorReturnChannel: make(chan<- error, 1),
 	})
 
 	// Act
@@ -561,7 +578,7 @@ func Test_Execute_PlayerHasNoCurrentCommand_InputIsSentToParsedCommand_CommandWa
 func Test_Execute_PlayerHasNoCurrentCommand_InputIsSentToParsedCommand_CommandWantsToTerminate(t *testing.T) {
 	// Arrange
 	conn := &FakeTelnetConnection{}
-	q := NewInputQueue(10, 10)
+	q := NewInputQueue(10, 10, logging.NewNullLogger())
 	player := absmachine.NewPlayer()
 	world := absmachine.NewWorld()
 	fakeCommand := FakeCommand{
@@ -610,7 +627,7 @@ func Test_Execute_PlayerHasNoCurrentCommand_InputIsSentToParsedCommand_CommandWa
 func Test_Execute_PlayerHasNoCurrentCommand_InputIsCommand_CommandFinished(t *testing.T) {
 	// Arrange
 	conn := &FakeTelnetConnection{}
-	q := NewInputQueue(10, 10)
+	q := NewInputQueue(10, 10, logging.NewNullLogger())
 	player := absmachine.NewPlayer()
 	world := absmachine.NewWorld()
 	fakeCommand := FakeCommand{
@@ -621,9 +638,10 @@ func Test_Execute_PlayerHasNoCurrentCommand_InputIsCommand_CommandFinished(t *te
 	world.AddPlayers([]*absmachine.Player{player})
 
 	q.Append(&PlayerInput{
-		player:     player,
-		command:    &fakeCommand,
-		connection: conn,
+		player:             player,
+		command:            &fakeCommand,
+		connection:         conn,
+		errorReturnChannel: make(chan<- error, 1),
 	})
 
 	// Act
@@ -646,20 +664,21 @@ func Test_Execute_PlayerHasNoCurrentCommand_InputIsCommand_CommandFinished(t *te
 func Test_Execute_PlayerHasNoCurrentCommand_InputIsCommand_CommandErrorsAreWrittenToConnection(t *testing.T) {
 	// Arrange
 	conn := &FakeTelnetConnection{}
-	q := NewInputQueue(10, 10)
+	q := NewInputQueue(10, 10, logging.NewNullLogger())
 	player := absmachine.NewPlayer()
 	world := absmachine.NewWorld()
 	fakeCommand := FakeCommand{
-		returnError:  errors.New("foo"),
+		returnError:  mudio.NewCommandError("foo"),
 		returnResult: mudio.CommandFinished,
 	}
 
 	world.AddPlayers([]*absmachine.Player{player})
 
 	q.Append(&PlayerInput{
-		player:     player,
-		command:    &fakeCommand,
-		connection: conn,
+		player:             player,
+		command:            &fakeCommand,
+		connection:         conn,
+		errorReturnChannel: make(chan<- error, 1),
 	})
 
 	// Act
@@ -682,7 +701,7 @@ func Test_Execute_PlayerHasNoCurrentCommand_InputIsCommand_CommandErrorsAreWritt
 func Test_Execute_PlayerHasNoCurrentCommand_InputIsCommand_CommandWantsToContinue(t *testing.T) {
 	// Arrange
 	conn := &FakeTelnetConnection{}
-	q := NewInputQueue(10, 10)
+	q := NewInputQueue(10, 10, logging.NewNullLogger())
 	player := absmachine.NewPlayer()
 	world := absmachine.NewWorld()
 	fakeCommand := FakeCommand{
@@ -693,9 +712,10 @@ func Test_Execute_PlayerHasNoCurrentCommand_InputIsCommand_CommandWantsToContinu
 	world.AddPlayers([]*absmachine.Player{player})
 
 	q.Append(&PlayerInput{
-		player:     player,
-		command:    &fakeCommand,
-		connection: conn,
+		player:             player,
+		command:            &fakeCommand,
+		connection:         conn,
+		errorReturnChannel: make(chan<- error, 1),
 	})
 
 	// Act
@@ -718,7 +738,7 @@ func Test_Execute_PlayerHasNoCurrentCommand_InputIsCommand_CommandWantsToContinu
 func Test_Execute_PlayerHasNoCurrentCommand_InputIsCommand_CommandWantsToTerminate(t *testing.T) {
 	// Arrange
 	conn := &FakeTelnetConnection{}
-	q := NewInputQueue(10, 10)
+	q := NewInputQueue(10, 10, logging.NewNullLogger())
 	player := absmachine.NewPlayer()
 	world := absmachine.NewWorld()
 	fakeCommand := FakeCommand{

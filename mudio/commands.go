@@ -17,6 +17,15 @@ const InvalidInput = "Invalid input."
 
 var CommandFinished = CommandResult{}
 
+type CommandResponse struct {
+	Player *absmachine.Player
+	Text   string
+}
+
+func CommandFinishedWithResponses(responses []CommandResponse) CommandResult {
+	return CommandResult{Responses: responses}
+}
+
 func ContinueWithPrompt(prompt string) CommandResult {
 	return CommandResult{
 		Prompt:   prompt,
@@ -28,17 +37,18 @@ type CommandResult struct {
 	Prompt                 string
 	Continue               bool
 	TerminatationRequested bool
+	Responses              []CommandResponse
 }
 
 type Command interface {
-	Execute(context *CommandContext) (result CommandResult, err error)
+	Execute(context *CommandContext) (result CommandResult, err *CommandError)
 }
 
 type CommandContext struct {
 	Input      string
 	World      *absmachine.World
 	Player     *absmachine.Player
-	Connection TelnetConnection
+	Connection TelnetConnection // TODO: Work to remove direct access to the telnet connection in the context!
 }
 
 type CommandError struct {
@@ -49,6 +59,10 @@ func (e *CommandError) Error() string {
 	return e.message
 }
 
+func NewCommandError(message string) *CommandError {
+	return &CommandError{message: message}
+}
+
 /**** Command: Who ****/
 type CommandWho struct{}
 
@@ -56,7 +70,7 @@ func NewCommandWho(args []string) Command {
 	return &CommandWho{}
 }
 
-func (command *CommandWho) Execute(context *CommandContext) (CommandResult, error) {
+func (command *CommandWho) Execute(context *CommandContext) (CommandResult, *CommandError) {
 	conn := context.Connection
 
 	conn.WriteLine("Players On-line")
@@ -87,7 +101,7 @@ func NewCommandQuit(args []string) Command {
 	return &CommandQuit{args: args}
 }
 
-func (command *CommandQuit) Execute(context *CommandContext) (CommandResult, error) {
+func (command *CommandQuit) Execute(context *CommandContext) (CommandResult, *CommandError) {
 	if len(command.args) > 0 && strings.ToLower(command.args[0]) == "now" {
 		context.Connection.WriteLine("Wow, what a hurry! Ok, sorry to see you go!")
 		return CommandResult{TerminatationRequested: true}, nil

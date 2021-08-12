@@ -298,3 +298,12 @@ func removeObjectFromRoom(room *Room, object *Object) *LowLevelOpsError {
 	object.Room = nil
 	return nil
 }
+
+func (world *World) FindPlayerByName(name string) *Player {
+	for _, player := range world.Players {
+		if strings.EqualFold(player.Name, name) {
+			return player
+		}
+	}
+	return nil
+}

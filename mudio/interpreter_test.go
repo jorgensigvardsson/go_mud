@@ -1,6 +1,7 @@
 package mudio
 
 import (
+	"fmt"
 	"reflect"
 	"testing"
 )
@@ -136,7 +137,7 @@ func Test_SimpleCommand_QuotedQuotes(t *testing.T) {
 			t.Errorf("Did not expect argument 0 to be %v", result.Args[0])
 		}
 
-		if result.Args[1] != "b\\\"c" {
+		if result.Args[1] != "b\"c" {
 			t.Errorf("Did not expect argument 1 to be %v", result.Args[1])
 		}
 
@@ -205,5 +206,50 @@ func Test_ParseCommand_UnknownCommand(t *testing.T) {
 	_, err := ParseCommand("garbledigarbage")
 	if err != ErrUnknownCommand {
 		t.Errorf("Command input generated the unexpected error: %v", err)
+	}
+}
+
+type parseArgsTestCase struct {
+	commandLine  string
+	count        int
+	expectedArgs []string
+}
+
+var parseArgsTestCases = []parseArgsTestCase{
+	{commandLine: "this is a test", count: -1, expectedArgs: []string{"this", "is", "a", "test"}},
+	{commandLine: "this is a test", count: 0, expectedArgs: []string{"this is a test"}},
+	{commandLine: "this is a test", count: 1, expectedArgs: []string{"this", "is a test"}},
+	{commandLine: "this is a test", count: 2, expectedArgs: []string{"this", "is", "a test"}},
+	{commandLine: "this is a test", count: 3, expectedArgs: []string{"this", "is", "a", "test"}},
+	{commandLine: "this is a test", count: 4, expectedArgs: []string{"this", "is", "a", "test"}},
+	{commandLine: "this is a test", count: 100, expectedArgs: []string{"this", "is", "a", "test"}},
+	{commandLine: "this \"is a\" test", count: -1, expectedArgs: []string{"this", "is a", "test"}},
+	{commandLine: "this \"is a\" test", count: 0, expectedArgs: []string{"this \"is a\" test"}},
+	{commandLine: "this \"is a\" test", count: 1, expectedArgs: []string{"this", "\"is a\" test"}},
+	{commandLine: "this \"is a\" test", count: 2, expectedArgs: []string{"this", "is a", "test"}},
+}
+
+func Test_ParseArguments(t *testing.T) {
+	for _, testCase := range parseArgsTestCases {
+		t.Run(
+			fmt.Sprintf("%v, count = %v", testCase.commandLine, testCase.count),
+			func(t *testing.T) {
+				args, err := ParseArguments(testCase.commandLine, testCase.count)
+
+				if err != nil {
+					t.Error("Did not expect an error:", err)
+				}
+
+				if len(args) != len(testCase.expectedArgs) {
+					t.Error("Returned array is not what is expected", args)
+				} else {
+					for i, expectedArg := range testCase.expectedArgs {
+						if expectedArg != args[i] {
+							t.Error("Returned array is not what is expected", args)
+						}
+					}
+				}
+			},
+		)
 	}
 }

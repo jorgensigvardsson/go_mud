@@ -2,7 +2,6 @@ package mudio
 
 import (
 	"errors"
-	"fmt"
 	"strings"
 )
 
@@ -26,6 +25,7 @@ var commandConstructors = []commandConstructor{
 	// such as "n" (north) than using the nod emote.
 	{name: "who", cons: NewCommandWho},
 	{name: "quit", cons: NewCommandQuit},
+	{name: "tell", cons: NewCommandTell},
 }
 
 type CommandParser = func(text string) (command Command, err error)
@@ -37,8 +37,9 @@ func ParseCommand(text string) (command Command, err error) {
 		return nil, err
 	}
 
+	cmdNameLowerCase := strings.ToLower(commandLine.Name)
 	for _, commandConstructor := range commandConstructors {
-		if strings.HasPrefix(commandConstructor.name, commandLine.Name) {
+		if strings.HasPrefix(commandConstructor.name, cmdNameLowerCase) {
 			return commandConstructor.cons(commandLine.Args), nil
 		}
 	}
@@ -55,7 +56,7 @@ func ParseCommandLine(text string) (CommandLine, error) {
 
 	command := text[:cmdEnd]
 
-	args, err := parseArguments(strings.TrimSpace(text[cmdEnd+1:]))
+	args, err := ParseArguments(strings.TrimSpace(text[cmdEnd+1:]), -1)
 
 	if err != nil {
 		return CommandLine{}, err
@@ -66,14 +67,17 @@ func ParseCommandLine(text string) (CommandLine, error) {
 
 var ErrInvalidCommandLine = errors.New("invalid command line")
 
-func parseArguments(text string) ([]string, error) {
+// If count < 0, then the returned array will contain all arguments, neatly parsed.
+// if count >= 0, then the returned array will contain count + 1 strings. The `count` first
+// will be neatly parsed, and the last entry will contain the rest of the command line
+func ParseArguments(text string, count int /* < 0 means parse ALL arguments */) ([]string, error) {
 	start := 0
 	insideQuotes := false
 
-	args := make([]string, 0, strings.Count(text, " "))
+	args := make([]string, 0, strings.Count(text, " ") /* Estimate capacity */)
 
 	var i int
-	for i = 0; i < len(text); i++ {
+	for i = 0; i < len(text) && (count < 0 || len(args) < count); i++ {
 		if text[i] == ' ' || text[i] == '\t' {
 			if insideQuotes {
 				// Let whitespace become part of the argument (inside quotes!)
@@ -90,8 +94,7 @@ func parseArguments(text string) ([]string, error) {
 					// Escaped " - let become part of the argument
 				} else {
 					// Now we have an argument!
-					fmt.Println("quoted arg:", text[start+1:i])
-					args = append(args, text[start+1:i])
+					args = append(args, strings.ReplaceAll(text[start+1:i], "\\\"", "\"")) // Make sure escaped quotes are turned into just quotes!
 					start = i + 1
 					insideQuotes = false
 				}
@@ -102,12 +105,17 @@ func parseArguments(text string) ([]string, error) {
 		}
 	}
 
-	if i > start {
+	if count < 0 { // We want all arguments
 		if insideQuotes {
 			return args, ErrInvalidCommandLine
 		} else {
 			args = append(args, text[start:i])
 		}
+	} else {
+		// Trim off all whitspace if any
+		for ; start < len(text) && (text[start:][0] == ' ' || text[start:][0] == '\t'); start++ {
+		}
+		args = append(args, text[start:])
 	}
 
 	return args, nil

@@ -24,7 +24,7 @@ func NewCommandLogin(args []string) Command {
 	return &CommandLogin{state: LS_Initial}
 }
 
-func (command *CommandLogin) Execute(context *CommandContext) (CommandResult, error) {
+func (command *CommandLogin) Execute(context *CommandContext) (CommandResult, *CommandError) {
 	switch command.state {
 	case LS_Initial:
 		// Show message of the day to user

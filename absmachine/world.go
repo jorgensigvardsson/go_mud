@@ -18,6 +18,7 @@ type PlayerState uint32
 const (
 	PS_STANDING PlayerState = 1 << iota
 	PS_LOGGED_IN
+	PS_BUSY
 )
 
 type Room struct {

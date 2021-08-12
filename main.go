@@ -28,7 +28,7 @@ func main() {
 			50,
 		),
 	)
-	inputQueue := NewInputQueue(MAX_USER_LIMIT, MAX_PLAYER_INPUT_QUEUE_LIMIT)
+	inputQueue := NewInputQueue(MAX_USER_LIMIT, MAX_PLAYER_INPUT_QUEUE_LIMIT, logger)
 	commandChannel := make(chan *PlayerInput, MAX_USER_LIMIT*MAX_PLAYER_INPUT_QUEUE_LIMIT)
 	sigtermChannel := make(chan os.Signal)
 	connectionsStopChannel := make(chan interface{})
@@ -139,10 +139,10 @@ func handleConnection(tcpConnection net.Conn, logger logging.Logger, commandChan
 
 	// The bootstrapping command: Login!
 	commandChannel <- &PlayerInput{
-		connection:         connection,
 		player:             player,
 		command:            mudio.NewCommandLogin([]string{}),
 		errorReturnChannel: errorReturnChannel,
+		connection:         connection,
 	}
 
 	// Kick off line reader
@@ -162,10 +162,10 @@ func handleConnection(tcpConnection net.Conn, logger logging.Logger, commandChan
 				finished = true
 			} else {
 				commandChannel <- &PlayerInput{
-					connection:         connection,
 					player:             player,
 					text:               strings.TrimSpace(lineInput.line),
 					errorReturnChannel: errorReturnChannel,
+					connection:         connection,
 				}
 			}
 		case err := <-errorReturnChannel:
@@ -190,10 +190,10 @@ func handleConnection(tcpConnection net.Conn, logger logging.Logger, commandChan
 	}
 
 	commandChannel <- &PlayerInput{
-		connection:         connection,
 		player:             player,
 		event:              PE_Exited,
 		errorReturnChannel: errorReturnChannel,
+		connection:         connection,
 	}
 }
 
