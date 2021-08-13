@@ -17,9 +17,30 @@ const TICK = 100 * time.Millisecond
 const MAX_USER_LIMIT = 100
 const MAX_PLAYER_INPUT_QUEUE_LIMIT = 20
 
-func main() {
-	// Make sure interpreter/commands is initialized
+func buildWorld() *absmachine.World {
 	world := absmachine.NewWorld()
+
+	entryRoom := absmachine.NewRoom()
+	entryRoom.Title = "The entry room"
+	entryRoom.Description = "You are in the starting room of this MUD.\r\nThere are creepy spiders and insects everywhere! RUN!"
+
+	peacefulRoom := absmachine.NewRoom()
+	peacefulRoom.Title = "The peaceful room"
+	peacefulRoom.Description = "A peaceful room. Cows and elephants are roaming the vast grassfield that continues to the north."
+
+	err := entryRoom.ConnectDuplex(peacefulRoom, absmachine.DIR_NORTH)
+	if err != nil {
+		panic(err)
+	}
+
+	world.AddRooms([]*absmachine.Room{entryRoom, peacefulRoom})
+	world.StartRoom = entryRoom
+
+	return world
+}
+
+func main() {
+	world := buildWorld()
 	logger := logging.NewTimestampLoggerDecorator(
 		logging.NewSynchronizingLoggerDecorator(
 			logging.NewConsoleLogger(),

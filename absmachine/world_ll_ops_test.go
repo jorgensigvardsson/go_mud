@@ -38,7 +38,7 @@ func Test_Player_RelocateToRoom_NotInPreviousRoom(t *testing.T) {
 	// Arrange
 	world := NewWorld()
 	player := NewPlayer()
-	room := NewRoom(world)
+	room := NewRoom()
 	world.AddRooms([]*Room{room})
 	world.AddPlayers([]*Player{player})
 
@@ -65,8 +65,8 @@ func Test_Player_RelocateToRoom_NotInPreviousRoom(t *testing.T) {
 func Test_Player_RelocateToRoom_InPreviousRoom(t *testing.T) {
 	// Arrange
 	world := NewWorld()
-	room1 := NewRoom(world)
-	room2 := NewRoom(world)
+	room1 := NewRoom()
+	room2 := NewRoom()
 	player := NewPlayer()
 	world.AddPlayers([]*Player{player})
 	world.AddRooms([]*Room{room1, room2})
@@ -99,8 +99,8 @@ func Test_Player_RelocateToRoom_InPreviousRoom(t *testing.T) {
 func Test_Mob_RelocateToRoom_NotInPreviousRoom(t *testing.T) {
 	// Arrange
 	world := NewWorld()
-	mob := NewMob(world)
-	room := NewRoom(world)
+	mob := NewMob()
+	room := NewRoom()
 	world.AddRooms([]*Room{room})
 	world.AddMobs([]*Mob{mob})
 
@@ -127,9 +127,9 @@ func Test_Mob_RelocateToRoom_NotInPreviousRoom(t *testing.T) {
 func Test_Mob_RelocateToRoom_InPreviousRoom(t *testing.T) {
 	// Arrange
 	world := NewWorld()
-	room1 := NewRoom(world)
-	room2 := NewRoom(world)
-	mob := NewMob(world)
+	room1 := NewRoom()
+	room2 := NewRoom()
+	mob := NewMob()
 	world.AddMobs([]*Mob{mob})
 	world.AddRooms([]*Room{room1, room2})
 	mob.RelocateToRoom(room1)
@@ -161,8 +161,8 @@ func Test_Mob_RelocateToRoom_InPreviousRoom(t *testing.T) {
 func Test_Object_RelocateToRoom_NotInPreviousRoom(t *testing.T) {
 	// Arrange
 	world := NewWorld()
-	object := NewObject(world)
-	room := NewRoom(world)
+	object := NewObject()
+	room := NewRoom()
 	world.AddRooms([]*Room{room})
 	world.AddObjects([]*Object{object})
 
@@ -189,9 +189,9 @@ func Test_Object_RelocateToRoom_NotInPreviousRoom(t *testing.T) {
 func Test_Object_RelocateToRoom_InPreviousRoom(t *testing.T) {
 	// Arrange
 	world := NewWorld()
-	room1 := NewRoom(world)
-	room2 := NewRoom(world)
-	object := NewObject(world)
+	room1 := NewRoom()
+	room2 := NewRoom()
+	object := NewObject()
 	world.AddObjects([]*Object{object})
 	world.AddRooms([]*Room{room1, room2})
 	object.RelocateToRoom(room1)
@@ -254,7 +254,7 @@ func Test_Move_RoomButNoWorld(t *testing.T) {
 func Test_Move_InvalidDirection(t *testing.T) {
 	// Arrange
 	world := NewWorld()
-	room := NewRoom(world)
+	room := NewRoom()
 	player := NewPlayer()
 
 	world.AddRooms([]*Room{room})
@@ -275,8 +275,8 @@ func Test_Move_InvalidDirection(t *testing.T) {
 func Test_Move_ValidDirection(t *testing.T) {
 	// Arrange
 	world := NewWorld()
-	northRoom := NewRoom(world)
-	room := NewRoom(world)
+	northRoom := NewRoom()
+	room := NewRoom()
 	player := NewPlayer()
 
 	world.AddRooms([]*Room{room, northRoom})

@@ -23,6 +23,7 @@ var commandConstructors = []commandConstructor{
 	// the command names, make sure to put shorter names before longer. For example,
 	// put "north" before "nod" in the list, because the user is more likely to use directions
 	// such as "n" (north) than using the nod emote.
+	{name: "look", cons: NewCommandLook},
 	{name: "who", cons: NewCommandWho},
 	{name: "quit", cons: NewCommandQuit},
 	{name: "tell", cons: NewCommandTell},

@@ -45,7 +45,14 @@ func (command *CommandLogin) Execute(context *CommandContext) (CommandResult, *C
 		context.Player.Name = command.username
 		context.Player.State.SetFlag(absmachine.PS_LOGGED_IN)
 		context.World.AddPlayers([]*absmachine.Player{context.Player})
-		return CommandResult{Output: "\r\n", TurnOnEcho: true}, nil /* Because echo off "stole" the new line from the user */
+		context.Player.RelocateToRoom(context.World.StartRoom)
+
+		lookResult, _ := doLook(context)
+
+		return CommandResult{
+			Output:     "\n" + /* Because echo off "stole" the new line from the user */ lookResult.Output,
+			TurnOnEcho: true,
+		}, nil
 	default:
 		return CommandResult{TerminatationRequested: true}, &CommandError{fmt.Sprintf("Unknown state reached: %v, preventing player from logging in.", command.state)}
 	}

@@ -13,25 +13,16 @@ func NewPlayer() *Player {
 	return player
 }
 
-func NewRoom(world *World) *Room {
-	room := &Room{}
-	world.Rooms = append(world.Rooms, room)
-	room.World = world
-	return room
+func NewRoom() *Room {
+	return &Room{}
 }
 
-func NewMob(world *World) *Mob {
-	mob := &Mob{}
-	world.Mobs = append(world.Mobs, mob)
-	mob.World = world
-	return mob
+func NewMob() *Mob {
+	return &Mob{}
 }
 
-func NewObject(world *World) *Object {
-	object := &Object{}
-	world.Objects = append(world.Objects, object)
-	object.World = world
-	return object
+func NewObject() *Object {
+	return &Object{}
 }
 
 func DestroyPlayer(player *Player) {
@@ -134,6 +125,22 @@ func (world *World) AddObjects(objects []*Object) *LowLevelOpsError {
 }
 
 func (room *Room) Connect(otherRoom *Room, direction Direction) *LowLevelOpsError {
+	if room.AdjacentRooms[direction] != nil {
+		return &LowLevelOpsError{errorCode: ErrorIconsistency, message: "Room is already connected to another room in specified direction"}
+	}
+
+	oppositeDirection := OppositeDirections[direction]
+
+	if otherRoom.AdjacentRooms[oppositeDirection] != nil {
+		return &LowLevelOpsError{errorCode: ErrorIconsistency, message: "Other room is already connected to another room in opposite direction"}
+	}
+
+	room.AdjacentRooms[direction] = otherRoom
+	otherRoom.AdjacentRooms[oppositeDirection] = room
+	return nil
+}
+
+func (room *Room) ConnectDuplex(otherRoom *Room, direction Direction) *LowLevelOpsError {
 	if room.AdjacentRooms[direction] != nil {
 		return &LowLevelOpsError{errorCode: ErrorIconsistency, message: "Room is already connected to another room in specified direction"}
 	}

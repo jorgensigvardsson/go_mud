@@ -11,6 +11,21 @@ const (
 	DIR_DOWN
 )
 
+var OppositeDirections = []Direction{
+	// DIR_NORTH = 0
+	DIR_SOUTH,
+	// DIR_SOUTH = 1
+	DIR_NORTH,
+	// DIR_EAST = 2
+	DIR_WEST,
+	// DIR_WEST = 3
+	DIR_EAST,
+	// DIR_UP = 4
+	DIR_DOWN,
+	// DIR_DOWN = 5
+	DIR_UP,
+}
+
 const NUM_DIR = 6
 
 type PlayerState uint32
@@ -22,6 +37,7 @@ const (
 )
 
 type Room struct {
+	Title         string
 	Description   string
 	Players       []*Player
 	Mobs          []*Mob
@@ -42,24 +58,27 @@ type Player struct {
 }
 
 type Mob struct {
-	Name        string
-	Description string
-	Room        *Room
-	World       *World
+	Name            string
+	Description     string
+	Room            *Room
+	World           *World
+	RoomDescription string
 }
 
 type World struct {
-	Rooms   []*Room
-	Players []*Player
-	Mobs    []*Mob
-	Objects []*Object
+	StartRoom *Room
+	Rooms     []*Room
+	Players   []*Player
+	Mobs      []*Mob
+	Objects   []*Object
 }
 
 type Object struct {
-	Name        string
-	Description string
-	Room        *Room
-	World       *World
+	Name            string
+	Description     string
+	Room            *Room
+	World           *World
+	RoomDescription string
 }
 
 type RelocatableToRoom interface {
