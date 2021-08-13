@@ -1,4 +1,4 @@
-package mudio
+package io
 
 import (
 	"bufio"

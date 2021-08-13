@@ -38,7 +38,7 @@ func handleConnection(tcpConnection net.Conn, logger logging.Logger, commandChan
 	outputChannel := make(chan *PlayerOutput, 10)
 
 	// Whip up a TELNET connection (along with an observer)
-	connection := mudio.NewTelnetConnection(
+	connection := NewTelnetConnection(
 		tcpConnection,
 		&playerTelnetConnectionObserver{logger: logger, player: player},
 		logger,
@@ -131,7 +131,7 @@ type LineInput struct {
 	err  error
 }
 
-func readLine(connection mudio.TelnetConnection, lineInputChannel chan<- LineInput, wg *sync.WaitGroup) {
+func readLine(connection TelnetConnection, lineInputChannel chan<- LineInput, wg *sync.WaitGroup) {
 	wg.Add(1)
 	defer wg.Done()
 
