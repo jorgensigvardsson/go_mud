@@ -81,21 +81,24 @@ type TelnetConnection interface {
 	Close() error
 }
 
+// The telnet connection is INHERENTLY unsafe for concurrent use!
 type implTelnetConnection struct {
-	connection net.Conn
-	reader     *bufio.Reader
-	writer     *bufio.Writer
-	observer   TelnetConnectionObserver
-	logger     logging.Logger
+	connection      net.Conn
+	reader          *bufio.Reader
+	writer          *bufio.Writer
+	observer        TelnetConnectionObserver
+	logger          logging.Logger
+	lastWrittenRune rune // This is used by write, and forces the telnet connection to be unsafe for concurrent use! (but who would use it concurrently anyway!?)
 }
 
 func NewTelnetConnection(connection net.Conn, observer TelnetConnectionObserver, logger logging.Logger) TelnetConnection {
 	return &implTelnetConnection{
-		connection: connection,
-		reader:     bufio.NewReader(connection),
-		writer:     bufio.NewWriter(connection),
-		observer:   observer,
-		logger:     logger,
+		connection:      connection,
+		reader:          bufio.NewReader(connection),
+		writer:          bufio.NewWriter(connection),
+		observer:        observer,
+		logger:          logger,
+		lastWrittenRune: '\x00',
 	}
 }
 
@@ -158,15 +161,15 @@ func (tconn *implTelnetConnection) readByte() (b byte, err error) {
 	}
 }
 
-func (tconn *implTelnetConnection) writeByte(b byte) error {
-	if b == IAC {
-		err := tconn.writer.WriteByte(IAC)
-		if err != nil {
-			return err
-		}
+func (tconn *implTelnetConnection) writeRune(r rune) error {
+	if r == '\n' && tconn.lastWrittenRune != '\r' {
+		// Inject a CR if it hasn't already been written
+		tconn.writer.WriteRune('\r')
 	}
 
-	return tconn.writer.WriteByte(b)
+	_, err := tconn.writer.WriteRune(r)
+	tconn.lastWrittenRune = r
+	return err
 }
 
 /* net.Conn, io.Reader and io.Writer implementations for TelnetConnection */
@@ -190,23 +193,21 @@ func (tconn *implTelnetConnection) ReadLine() (line string, err error) {
 		}
 	}
 
-	return string(buf), nil
+	return string(buf), nil // buffer is assumed to be UTF-8! (Bad codes are converted into the � rune)
 }
 
 func (tconn *implTelnetConnection) WriteLine(line string) error {
-	for _, b := range []byte(line) {
-		err := tconn.writeByte(b)
-		if err != nil {
-			return err
-		}
-	}
-
-	err := tconn.writeByte('\r')
+	err := tconn.writeStringNoFlush(line)
 	if err != nil {
 		return err
 	}
 
-	err = tconn.writeByte('\n')
+	err = tconn.writeRune('\r')
+	if err != nil {
+		return err
+	}
+
+	err = tconn.writeRune('\n')
 	if err != nil {
 		return err
 	}
@@ -222,12 +223,21 @@ func (tconn *implTelnetConnection) WriteLinef(line string, args ...interface{}) 
 	return tconn.WriteLine(fmt.Sprintf(line, args...))
 }
 
-func (tconn *implTelnetConnection) WriteString(text string) error {
-	for _, b := range []byte(text) {
-		err := tconn.writeByte(b)
+func (tconn *implTelnetConnection) writeStringNoFlush(text string) error {
+	for _, r := range text {
+		err := tconn.writeRune(r)
 		if err != nil {
 			return err
 		}
+	}
+
+	return nil
+}
+
+func (tconn *implTelnetConnection) WriteString(text string) error {
+	err := tconn.writeStringNoFlush(text)
+	if err != nil {
+		return err
 	}
 
 	return tconn.writer.Flush()

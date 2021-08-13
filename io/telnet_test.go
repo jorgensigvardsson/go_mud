@@ -185,39 +185,62 @@ func Test_readByte_InvalidCommandThenDataByte(t *testing.T) {
 	}
 }
 
-/*** writeByte tests ***/
+/*** writeRune tests ***/
 func Test_writeByte_OneDataByte(t *testing.T) {
 	writeBuffer := bytes.NewBuffer([]byte{})
 	conn := &implTelnetConnection{
 		writer: bufio.NewWriter(writeBuffer),
 	}
 
-	err := conn.writeByte(1)
+	err := conn.writeRune('a')
 	conn.writer.Flush() // Force write to the underlying buffer
 
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
 	}
 
-	if !bytes.Equal([]byte{1}, writeBuffer.Bytes()) {
+	if !bytes.Equal([]byte{'a'}, writeBuffer.Bytes()) {
 		t.Errorf("Unexpected write buffer %v", writeBuffer.Bytes())
 	}
 }
 
-func Test_writeByte_IACData(t *testing.T) {
+func Test_writeByte_NewLineConvertedToCrLf(t *testing.T) {
 	writeBuffer := bytes.NewBuffer([]byte{})
 	conn := &implTelnetConnection{
 		writer: bufio.NewWriter(writeBuffer),
 	}
 
-	err := conn.writeByte(IAC)
+	err := conn.writeRune('\n')
 	conn.writer.Flush() // Force write to the underlying buffer
 
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
 	}
 
-	if !bytes.Equal([]byte{IAC, IAC}, writeBuffer.Bytes()) {
+	if !bytes.Equal([]byte{'\r', '\n'}, writeBuffer.Bytes()) {
+		t.Errorf("Unexpected write buffer %v", writeBuffer.Bytes())
+	}
+}
+
+func Test_writeByte_CrIsRemembered(t *testing.T) {
+	writeBuffer := bytes.NewBuffer([]byte{})
+	conn := &implTelnetConnection{
+		writer: bufio.NewWriter(writeBuffer),
+	}
+
+	err1 := conn.writeRune('\r')
+	err2 := conn.writeRune('\n') // writeByte should now consider that we wrote \r earlier, and thus NOT inject \r again
+	conn.writer.Flush()          // Force write to the underlying buffer
+
+	if err1 != nil {
+		t.Errorf("Unexpected error (1): %v", err1)
+	}
+
+	if err2 != nil {
+		t.Errorf("Unexpected error (1): %v", err2)
+	}
+
+	if !bytes.Equal([]byte{'\r', '\n'}, writeBuffer.Bytes()) {
 		t.Errorf("Unexpected write buffer %v", writeBuffer.Bytes())
 	}
 }
@@ -275,7 +298,7 @@ func Test_WriteLine_AppendsCrAndLf(t *testing.T) {
 	}
 }
 
-/*** WriteLine tests ***/
+/*** WriteString tests ***/
 func Test_WriteString(t *testing.T) {
 	writeBuffer := bytes.NewBuffer([]byte{})
 	conn := &implTelnetConnection{
@@ -289,6 +312,23 @@ func Test_WriteString(t *testing.T) {
 	}
 
 	if !bytes.Equal([]byte{'H', 'e', 'l', 'l', 'o'}, writeBuffer.Bytes()) {
+		t.Errorf("Unexpected write buffer %v", writeBuffer.Bytes())
+	}
+}
+
+func Test_WriteString_CrAreInjectedBeforeNlIfNotPresent(t *testing.T) {
+	writeBuffer := bytes.NewBuffer([]byte{})
+	conn := &implTelnetConnection{
+		writer: bufio.NewWriter(writeBuffer),
+	}
+
+	err := conn.WriteString("Hello\n")
+
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+
+	if !bytes.Equal([]byte{'H', 'e', 'l', 'l', 'o', '\r', '\n'}, writeBuffer.Bytes()) {
 		t.Errorf("Unexpected write buffer %v", writeBuffer.Bytes())
 	}
 }
