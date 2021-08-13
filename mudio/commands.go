@@ -8,15 +8,15 @@ import (
 
 const InvalidInput = "Invalid input."
 
-type CommandResponse struct {
-	Player *absmachine.Player
-	Text   string
+type TextMessage struct {
+	RecipientPlayer *absmachine.Player
+	Text            string
 }
 
 type CommandResult struct {
 	Prompt                 string
 	TerminatationRequested bool
-	Responses              []CommandResponse
+	TextMessages           []TextMessage
 	Output                 string
 	TurnOffEcho            bool
 	TurnOnEcho             bool

@@ -52,10 +52,10 @@ func (command *CommandTell) Execute(context *CommandContext) (CommandResult, *Co
 
 	// We got the verbatim text, so let's push it to the other user!
 	return CommandResult{
-			Responses: []CommandResponse{
+			TextMessages: []TextMessage{
 				{
-					Player: otherPlayer,
-					Text:   fmt.Sprintf("%v tells you: %v", context.Player.Name, args[2]),
+					RecipientPlayer: otherPlayer,
+					Text:            fmt.Sprintf("%v tells you: %v", context.Player.Name, args[2]),
 				},
 			},
 		},

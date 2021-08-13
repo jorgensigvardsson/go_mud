@@ -93,7 +93,12 @@ func (q *InputQueue) Execute(world *absmachine.World) {
 		}
 
 		if result.Output != "" {
-			pq.outputChannel <- PrintOutput(result.Output)
+			if result.Output[len(result.Output)-1] != '\n' {
+				// Ensure we get a new line after each output
+				pq.outputChannel <- PrintlnOutput(result.Output)
+			} else {
+				pq.outputChannel <- PrintOutput(result.Output)
+			}
 		}
 
 		if result.TerminatationRequested {
@@ -115,15 +120,15 @@ func (q *InputQueue) Execute(world *absmachine.World) {
 				player.State.ClearFlag(absmachine.PS_BUSY) // If the command is complete, then the player is no longer busy
 			}
 
-			for _, response := range result.Responses {
-				pq, found := q.playerQueues[response.Player]
+			for _, response := range result.TextMessages {
+				pq, found := q.playerQueues[response.RecipientPlayer]
 
 				if !found {
-					q.logger.Printlnf("Tried to send response to player %v from player %v, but receiving player does not have a queue!", response.Player.Name, player.Name)
+					q.logger.Printlnf("Tried to send text message to player %v from player %v, but receiving player does not have a queue!", response.RecipientPlayer.Name, player.Name)
 				} else {
-					pq.outputChannel <- PrintlnOutput("")                 // Emit a new line in order to clear the prompt on screen
-					pq.outputChannel <- PrintlnOutput(response.Text)      // Then the response text
-					pq.outputChannel <- PrintOutput(normalPrompt(player)) // And finally show the prompt again
+					pq.outputChannel <- PrintlnOutput("")                                   // Emit a new line in order to clear the prompt on screen
+					pq.outputChannel <- PrintlnOutput(response.Text)                        // Then the response text
+					pq.outputChannel <- PrintOutput(normalPrompt(response.RecipientPlayer)) // And finally show the prompt again
 				}
 			}
 

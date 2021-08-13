@@ -1,7 +1,4 @@
 # Missing tests
-
-input-queue_test.go is incomplete - fix it!
-
 connection-handling.go is not tested at all!
 
 # General shortcomings

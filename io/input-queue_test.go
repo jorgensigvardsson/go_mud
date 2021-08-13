@@ -1,6 +1,7 @@
 package io
 
 import (
+	"errors"
 	"fmt"
 	"testing"
 
@@ -20,6 +21,52 @@ func Test_showNormalPrompt(t *testing.T) {
 	if promptText != "[H:103] [M:43] > " {
 		t.Errorf("Unexpected prompt: %v", promptText)
 	}
+}
+
+func Test_Append_PanicsIfNoOutputChannel(t *testing.T) {
+	// Arrange
+	q := NewInputQueue(1, 1, logging.NewNullLogger())
+	p := absmachine.NewPlayer()
+
+	errorChannel := make(chan error)
+
+	// Act && Assert
+	defer func() {
+		if recover() == nil {
+			t.Error("Append did not panic as expected!")
+		}
+	}()
+
+	q.Append(
+		&PlayerInput{
+			player:             p,
+			text:               "cmd",
+			errorReturnChannel: errorChannel,
+		},
+	)
+}
+
+func Test_Append_PanicsIfNoErrorReturnChannel(t *testing.T) {
+	// Arrange
+	q := NewInputQueue(1, 1, logging.NewNullLogger())
+	p := absmachine.NewPlayer()
+
+	outputChannel := make(chan *PlayerOutput)
+
+	// Act && Assert
+	defer func() {
+		if recover() == nil {
+			t.Error("Append did not panic as expected!")
+		}
+	}()
+
+	q.Append(
+		&PlayerInput{
+			player:        p,
+			text:          "cmd",
+			outputChannel: outputChannel,
+		},
+	)
 }
 
 func Test_Append_PlayerLimitIsRespected(t *testing.T) {
@@ -52,20 +99,8 @@ func Test_Append_PlayerLimitIsRespected(t *testing.T) {
 		},
 	)
 
-	select {
-	case err := <-errorChannel1:
-		t.Errorf("Unexpected error on channel 1: %v", err)
-	default:
-	}
-
-	select {
-	case err := <-errorChannel2:
-		if err != ErrTooManyPlayers {
-			t.Errorf("Unexpected error: %v", err)
-		}
-	default:
-		t.Errorf("Unexpectedly, there was no error on channel 2!")
-	}
+	testError(t, errorChannel1)
+	testError(t, errorChannel2, ErrTooManyPlayers)
 }
 
 func Test_Append_PlayerInputLimitIsRespected(t *testing.T) {
@@ -94,14 +129,7 @@ func Test_Append_PlayerInputLimitIsRespected(t *testing.T) {
 		},
 	)
 
-	select {
-	case err := <-errorChannel:
-		if err != ErrTooMuchInput {
-			t.Errorf("Unexpected error: %v", err)
-		}
-	default:
-		t.Errorf("Unexpectedly, there was no error on channel!")
-	}
+	testError(t, errorChannel, ErrTooMuchInput)
 }
 
 func Test_Execute_NoInput_NoEffect(t *testing.T) {
@@ -208,22 +236,6 @@ func (cmd *FakeCommand) Execute(context *mudio.CommandContext) (result mudio.Com
 	return cmd.returnResult, cmd.returnError
 }
 
-func getOutput(channel <-chan *PlayerOutput) []*PlayerOutput {
-	output := make([]*PlayerOutput, 0)
-	done := false
-
-	for !done {
-		select {
-		case playerOutput := <-channel:
-			output = append(output, playerOutput)
-		default:
-			done = true
-		}
-	}
-
-	return output
-}
-
 func Test_Execute_NoInput_StandardPromptWrittenToConnection(t *testing.T) {
 	// Arrange
 	q := NewInputQueue(10, 10, logging.NewNullLogger())
@@ -243,11 +255,7 @@ func Test_Execute_NoInput_StandardPromptWrittenToConnection(t *testing.T) {
 	q.Execute(world)
 
 	// Assert
-	output := getOutput(outputChannel)
-
-	if len(output) != 1 || output[0].text != "[H:0] [M:0] > " {
-		t.Error("Unexpected output sent to player")
-	}
+	testOutput(t, outputChannel, "[H:0] [M:0] > ")
 }
 
 func Test_Execute_PlayerHasCurrentCommand_InputIsSentToCurrentCommand_CommandFinished(t *testing.T) {
@@ -319,31 +327,18 @@ func Test_Execute_PlayerHasCurrentCommand_InputIsSentToCurrentCommand_CommandErr
 		t.Error("Expected current command for player to be cleared!")
 	}
 
-	output := getOutput(outputChannel)
-
-	if len(output) != 2 {
-		t.Errorf("Expected 2 output item, but got %v", len(output))
-	} else {
-		if output[0].text != fmt.Sprintln("foo") {
-			t.Error("Unexpected output sent to player")
-		}
-
-		if output[1].text != "[H:0] [M:0] > " {
-			t.Error("Unexpected output sent to player")
-		}
-	}
+	testOutput(t, outputChannel, fmt.Sprintln("foo"), "[H:0] [M:0] > ")
 }
 
-/*
 func Test_Execute_PlayerHasCurrentCommand_InputIsSentToCurrentCommand_CommandWantsToContinue(t *testing.T) {
 	// Arrange
-	conn := &FakeTelnetConnection{}
 	q := NewInputQueue(10, 10, logging.NewNullLogger())
 	player := absmachine.NewPlayer()
 	world := absmachine.NewWorld()
+	outputChannel := make(chan *PlayerOutput, 10)
 	currentCommand := FakeCommand{
 		returnError:  nil,
-		returnResult: mudio.ContinueWithPrompt("A prompt"),
+		returnResult: mudio.CommandResult{Prompt: "A prompt"},
 	}
 
 	world.AddPlayers([]*absmachine.Player{player})
@@ -353,7 +348,7 @@ func Test_Execute_PlayerHasCurrentCommand_InputIsSentToCurrentCommand_CommandWan
 	q.Append(&PlayerInput{
 		player:             player,
 		text:               "cmd text",
-		connection:         conn,
+		outputChannel:      outputChannel,
 		errorReturnChannel: make(chan<- error, 1),
 	})
 
@@ -369,17 +364,15 @@ func Test_Execute_PlayerHasCurrentCommand_InputIsSentToCurrentCommand_CommandWan
 		t.Error("Expected current command for player to remain!")
 	}
 
-	if conn.writtenText != "A prompt" {
-		t.Errorf("Unexpected output sent to player Connection: %v", conn.writtenText)
-	}
+	testOutput(t, outputChannel, "A prompt")
 }
 
 func Test_Execute_PlayerHasCurrentCommand_InputIsSentToCurrentCommand_CommandWantsToTerminate(t *testing.T) {
 	// Arrange
-	conn := &FakeTelnetConnection{}
 	q := NewInputQueue(10, 10, logging.NewNullLogger())
 	player := absmachine.NewPlayer()
 	world := absmachine.NewWorld()
+	outputChannel := make(chan *PlayerOutput, 10)
 	currentCommand := FakeCommand{
 		returnError: nil,
 		returnResult: mudio.CommandResult{
@@ -395,7 +388,7 @@ func Test_Execute_PlayerHasCurrentCommand_InputIsSentToCurrentCommand_CommandWan
 	q.Append(&PlayerInput{
 		player:             player,
 		text:               "cmd text",
-		connection:         conn,
+		outputChannel:      outputChannel,
 		errorReturnChannel: errorReturnChannel,
 	})
 
@@ -411,22 +404,15 @@ func Test_Execute_PlayerHasCurrentCommand_InputIsSentToCurrentCommand_CommandWan
 		t.Error("Expected current command for player to be cleared!")
 	}
 
-	select {
-	case err := <-errorReturnChannel:
-		if err != ErrPlayerQuit {
-			t.Errorf("Did not expect '%v' on the error return channel", err)
-		}
-	default:
-		t.Error("Expected an error on the error return channel!")
-	}
+	testError(t, errorReturnChannel, ErrPlayerQuit)
 }
 
 func Test_Execute_PlayerHasNoCurrentCommand_InvalidInput_ErrorAndStandardPromptWrittenToConnection(t *testing.T) {
 	// Arrange
-	conn := &FakeTelnetConnection{}
 	q := NewInputQueue(10, 10, logging.NewNullLogger())
 	player := absmachine.NewPlayer()
 	world := absmachine.NewWorld()
+	outputChannel := make(chan *PlayerOutput, 10)
 
 	q.commandParser = func(text string) (command mudio.Command, err error) {
 		return nil, errors.New("foo")
@@ -437,7 +423,7 @@ func Test_Execute_PlayerHasNoCurrentCommand_InvalidInput_ErrorAndStandardPromptW
 	q.Append(&PlayerInput{
 		player:             player,
 		text:               "gargksjdl",
-		connection:         conn,
+		outputChannel:      outputChannel,
 		errorReturnChannel: make(chan<- error, 1),
 	})
 
@@ -445,17 +431,15 @@ func Test_Execute_PlayerHasNoCurrentCommand_InvalidInput_ErrorAndStandardPromptW
 	q.Execute(world)
 
 	// Assert
-	if conn.writtenText != "Error: foo\r\n[H:0] [M:0] > " {
-		t.Errorf("Unexpected output sent to player Connection: %v", conn.writtenText)
-	}
+	testOutput(t, outputChannel, fmt.Sprintln("Error: foo"), "[H:0] [M:0] > ")
 }
 
 func Test_Execute_PlayerHasNoCurrentCommand_InputIsSentToParsedCommand_CommandFinished(t *testing.T) {
 	// Arrange
-	conn := &FakeTelnetConnection{}
 	q := NewInputQueue(10, 10, logging.NewNullLogger())
 	player := absmachine.NewPlayer()
 	world := absmachine.NewWorld()
+	outputChannel := make(chan *PlayerOutput, 10)
 	fakeCommand := FakeCommand{
 		returnError:  nil,
 		returnResult: mudio.CommandResult{},
@@ -470,7 +454,7 @@ func Test_Execute_PlayerHasNoCurrentCommand_InputIsSentToParsedCommand_CommandFi
 	q.Append(&PlayerInput{
 		player:             player,
 		text:               "cmd text",
-		connection:         conn,
+		outputChannel:      outputChannel,
 		errorReturnChannel: make(chan<- error, 1),
 	})
 
@@ -486,17 +470,15 @@ func Test_Execute_PlayerHasNoCurrentCommand_InputIsSentToParsedCommand_CommandFi
 		t.Error("Expected current command for player to be cleared!")
 	}
 
-	if conn.writtenText != "[H:0] [M:0] > " {
-		t.Errorf("Unexpected output sent to player Connection: %v", conn.writtenText)
-	}
+	testOutput(t, outputChannel, "[H:0] [M:0] > ")
 }
 
 func Test_Execute_PlayerHasNoCurrentCommand_InputIsSentToParsedCommand_CommandErrorsAreWrittenToConnection(t *testing.T) {
 	// Arrange
-	conn := &FakeTelnetConnection{}
 	q := NewInputQueue(10, 10, logging.NewNullLogger())
 	player := absmachine.NewPlayer()
 	world := absmachine.NewWorld()
+	outputChannel := make(chan *PlayerOutput, 10)
 	fakeCommand := FakeCommand{
 		returnError:  mudio.NewCommandError("foo"),
 		returnResult: mudio.CommandResult{},
@@ -511,7 +493,7 @@ func Test_Execute_PlayerHasNoCurrentCommand_InputIsSentToParsedCommand_CommandEr
 	q.Append(&PlayerInput{
 		player:             player,
 		text:               "cmd text",
-		connection:         conn,
+		outputChannel:      outputChannel,
 		errorReturnChannel: make(chan<- error, 1),
 	})
 
@@ -527,20 +509,18 @@ func Test_Execute_PlayerHasNoCurrentCommand_InputIsSentToParsedCommand_CommandEr
 		t.Error("Expected current command for player to be cleared!")
 	}
 
-	if conn.writtenText != "foo\r\n[H:0] [M:0] > " {
-		t.Errorf("Unexpected output sent to player Connection: %v", conn.writtenText)
-	}
+	testOutput(t, outputChannel, fmt.Sprintln("foo"), "[H:0] [M:0] > ")
 }
 
 func Test_Execute_PlayerHasNoCurrentCommand_InputIsSentToParsedCommand_CommandWantsToContinue(t *testing.T) {
 	// Arrange
-	conn := &FakeTelnetConnection{}
 	q := NewInputQueue(10, 10, logging.NewNullLogger())
 	player := absmachine.NewPlayer()
 	world := absmachine.NewWorld()
+	outputChannel := make(chan *PlayerOutput, 10)
 	fakeCommand := FakeCommand{
 		returnError:  nil,
-		returnResult: mudio.ContinueWithPrompt("A prompt"),
+		returnResult: mudio.CommandResult{Prompt: "A prompt"},
 	}
 
 	q.commandParser = func(text string) (command mudio.Command, err error) {
@@ -552,7 +532,7 @@ func Test_Execute_PlayerHasNoCurrentCommand_InputIsSentToParsedCommand_CommandWa
 	q.Append(&PlayerInput{
 		player:             player,
 		text:               "cmd text",
-		connection:         conn,
+		outputChannel:      outputChannel,
 		errorReturnChannel: make(chan<- error, 1),
 	})
 
@@ -568,17 +548,15 @@ func Test_Execute_PlayerHasNoCurrentCommand_InputIsSentToParsedCommand_CommandWa
 		t.Error("Expected current command for player to remain!")
 	}
 
-	if conn.writtenText != "A prompt" {
-		t.Errorf("Unexpected output sent to player Connection: %v", conn.writtenText)
-	}
+	testOutput(t, outputChannel, "A prompt")
 }
 
 func Test_Execute_PlayerHasNoCurrentCommand_InputIsSentToParsedCommand_CommandWantsToTerminate(t *testing.T) {
 	// Arrange
-	conn := &FakeTelnetConnection{}
 	q := NewInputQueue(10, 10, logging.NewNullLogger())
 	player := absmachine.NewPlayer()
 	world := absmachine.NewWorld()
+	outputChannel := make(chan *PlayerOutput, 10)
 	fakeCommand := FakeCommand{
 		returnError: nil,
 		returnResult: mudio.CommandResult{
@@ -596,7 +574,7 @@ func Test_Execute_PlayerHasNoCurrentCommand_InputIsSentToParsedCommand_CommandWa
 	q.Append(&PlayerInput{
 		player:             player,
 		text:               "cmd text",
-		connection:         conn,
+		outputChannel:      outputChannel,
 		errorReturnChannel: errorReturnChannel,
 	})
 
@@ -612,22 +590,15 @@ func Test_Execute_PlayerHasNoCurrentCommand_InputIsSentToParsedCommand_CommandWa
 		t.Error("Expected current command for player to be cleared!")
 	}
 
-	select {
-	case err := <-errorReturnChannel:
-		if err != ErrPlayerQuit {
-			t.Errorf("Did not expect '%v' on the error return channel", err)
-		}
-	default:
-		t.Error("Expected an error on the error return channel!")
-	}
+	testError(t, errorReturnChannel, ErrPlayerQuit)
 }
 
 func Test_Execute_PlayerHasNoCurrentCommand_InputIsCommand_CommandFinished(t *testing.T) {
 	// Arrange
-	conn := &FakeTelnetConnection{}
 	q := NewInputQueue(10, 10, logging.NewNullLogger())
 	player := absmachine.NewPlayer()
 	world := absmachine.NewWorld()
+	outputChannel := make(chan *PlayerOutput, 10)
 	fakeCommand := FakeCommand{
 		returnError:  nil,
 		returnResult: mudio.CommandResult{},
@@ -638,7 +609,7 @@ func Test_Execute_PlayerHasNoCurrentCommand_InputIsCommand_CommandFinished(t *te
 	q.Append(&PlayerInput{
 		player:             player,
 		command:            &fakeCommand,
-		connection:         conn,
+		outputChannel:      outputChannel,
 		errorReturnChannel: make(chan<- error, 1),
 	})
 
@@ -654,17 +625,15 @@ func Test_Execute_PlayerHasNoCurrentCommand_InputIsCommand_CommandFinished(t *te
 		t.Error("Expected current command for player to be cleared!")
 	}
 
-	if conn.writtenText != "[H:0] [M:0] > " {
-		t.Errorf("Unexpected output sent to player Connection: %v", conn.writtenText)
-	}
+	testOutput(t, outputChannel, "[H:0] [M:0] > ")
 }
 
 func Test_Execute_PlayerHasNoCurrentCommand_InputIsCommand_CommandErrorsAreWrittenToConnection(t *testing.T) {
 	// Arrange
-	conn := &FakeTelnetConnection{}
 	q := NewInputQueue(10, 10, logging.NewNullLogger())
 	player := absmachine.NewPlayer()
 	world := absmachine.NewWorld()
+	outputChannel := make(chan *PlayerOutput, 10)
 	fakeCommand := FakeCommand{
 		returnError:  mudio.NewCommandError("foo"),
 		returnResult: mudio.CommandResult{},
@@ -675,7 +644,7 @@ func Test_Execute_PlayerHasNoCurrentCommand_InputIsCommand_CommandErrorsAreWritt
 	q.Append(&PlayerInput{
 		player:             player,
 		command:            &fakeCommand,
-		connection:         conn,
+		outputChannel:      outputChannel,
 		errorReturnChannel: make(chan<- error, 1),
 	})
 
@@ -691,20 +660,18 @@ func Test_Execute_PlayerHasNoCurrentCommand_InputIsCommand_CommandErrorsAreWritt
 		t.Error("Expected current command for player to be cleared!")
 	}
 
-	if conn.writtenText != "foo\r\n[H:0] [M:0] > " {
-		t.Errorf("Unexpected output sent to player Connection: %v", conn.writtenText)
-	}
+	testOutput(t, outputChannel, fmt.Sprintln("foo"), "[H:0] [M:0] > ")
 }
 
 func Test_Execute_PlayerHasNoCurrentCommand_InputIsCommand_CommandWantsToContinue(t *testing.T) {
 	// Arrange
-	conn := &FakeTelnetConnection{}
 	q := NewInputQueue(10, 10, logging.NewNullLogger())
 	player := absmachine.NewPlayer()
 	world := absmachine.NewWorld()
+	outputChannel := make(chan *PlayerOutput, 10)
 	fakeCommand := FakeCommand{
 		returnError:  nil,
-		returnResult: mudio.ContinueWithPrompt("A prompt"),
+		returnResult: mudio.CommandResult{Prompt: "A prompt"},
 	}
 
 	world.AddPlayers([]*absmachine.Player{player})
@@ -712,7 +679,7 @@ func Test_Execute_PlayerHasNoCurrentCommand_InputIsCommand_CommandWantsToContinu
 	q.Append(&PlayerInput{
 		player:             player,
 		command:            &fakeCommand,
-		connection:         conn,
+		outputChannel:      outputChannel,
 		errorReturnChannel: make(chan<- error, 1),
 	})
 
@@ -728,17 +695,15 @@ func Test_Execute_PlayerHasNoCurrentCommand_InputIsCommand_CommandWantsToContinu
 		t.Error("Expected current command for player to remain!")
 	}
 
-	if conn.writtenText != "A prompt" {
-		t.Errorf("Unexpected output sent to player Connection: %v", conn.writtenText)
-	}
+	testOutput(t, outputChannel, "A prompt")
 }
 
 func Test_Execute_PlayerHasNoCurrentCommand_InputIsCommand_CommandWantsToTerminate(t *testing.T) {
 	// Arrange
-	conn := &FakeTelnetConnection{}
 	q := NewInputQueue(10, 10, logging.NewNullLogger())
 	player := absmachine.NewPlayer()
 	world := absmachine.NewWorld()
+	outputChannel := make(chan *PlayerOutput, 10)
 	fakeCommand := FakeCommand{
 		returnError: nil,
 		returnResult: mudio.CommandResult{
@@ -756,7 +721,7 @@ func Test_Execute_PlayerHasNoCurrentCommand_InputIsCommand_CommandWantsToTermina
 	q.Append(&PlayerInput{
 		player:             player,
 		command:            &fakeCommand,
-		connection:         conn,
+		outputChannel:      outputChannel,
 		errorReturnChannel: errorReturnChannel,
 	})
 
@@ -772,13 +737,244 @@ func Test_Execute_PlayerHasNoCurrentCommand_InputIsCommand_CommandWantsToTermina
 		t.Error("Expected current command for player to be cleared!")
 	}
 
-	select {
-	case err := <-errorReturnChannel:
-		if err != ErrPlayerQuit {
-			t.Errorf("Did not expect '%v' on the error return channel", err)
-		}
-	default:
-		t.Error("Expected an error on the error return channel!")
+	testError(t, errorReturnChannel, ErrPlayerQuit)
+}
+
+func Test_Execute_TextMessagesAreSentToRecipientPlayers(t *testing.T) {
+	// Arrange
+	q := NewInputQueue(10, 10, logging.NewNullLogger())
+	player := absmachine.NewPlayer()
+	player2 := absmachine.NewPlayer()
+	player3 := absmachine.NewPlayer()
+	world := absmachine.NewWorld()
+	playerOutputChannel := make(chan *PlayerOutput, 10)
+	player2OutputChannel := make(chan *PlayerOutput, 10)
+	player3OutputChannel := make(chan *PlayerOutput, 10)
+	playerErrorReturnChannel := make(chan error, 10)
+
+	world.AddPlayers([]*absmachine.Player{player, player2, player3})
+
+	q.playerQueues[player2] = newPlayerQueue()
+	q.playerQueues[player3] = newPlayerQueue()
+
+	q.playerQueues[player2].outputChannel = player2OutputChannel
+	q.playerQueues[player3].outputChannel = player3OutputChannel
+
+	player2.Health = 123
+	player2.Mana = 321
+	player3.Health = 456
+	player3.Mana = 654
+
+	fakeCommand := FakeCommand{
+		returnError: nil,
+		returnResult: mudio.CommandResult{
+			TextMessages: []mudio.TextMessage{
+				{
+					Text:            "for player 2",
+					RecipientPlayer: player2,
+				},
+				{
+					Text:            "for player 3",
+					RecipientPlayer: player3,
+				},
+			},
+		},
+	}
+
+	q.Append(&PlayerInput{
+		player:             player,
+		command:            &fakeCommand,
+		outputChannel:      playerOutputChannel,
+		errorReturnChannel: playerErrorReturnChannel,
+	})
+
+	// Act
+	q.Execute(world)
+
+	// Assert
+	testOutput(t, player2OutputChannel, fmt.Sprintln(""), fmt.Sprintln("for player 2"), "[H:123] [M:321] > ")
+	testOutput(t, player3OutputChannel, fmt.Sprintln(""), fmt.Sprintln("for player 3"), "[H:456] [M:654] > ")
+}
+
+func Test_Execute_EchoMaybeTurnedOff(t *testing.T) {
+	// Arrange
+	q := NewInputQueue(10, 10, logging.NewNullLogger())
+	player := absmachine.NewPlayer()
+	world := absmachine.NewWorld()
+	playerOutputChannel := make(chan *PlayerOutput, 10)
+	playerErrorReturnChannel := make(chan error, 10)
+
+	world.AddPlayers([]*absmachine.Player{player})
+
+	fakeCommand := FakeCommand{
+		returnError: nil,
+		returnResult: mudio.CommandResult{
+			TurnOffEcho: true,
+		},
+	}
+
+	q.Append(&PlayerInput{
+		player:             player,
+		command:            &fakeCommand,
+		outputChannel:      playerOutputChannel,
+		errorReturnChannel: playerErrorReturnChannel,
+	})
+
+	// Act
+	q.Execute(world)
+
+	// Assert
+	output := getOutput(playerOutputChannel)
+	if len(output) != 2 || output[0].text != "[H:0] [M:0] >" && output[1].echoState != ES_Off {
+		t.Error("Expected output to be a prompt and a single ES_Off")
 	}
 }
-*/
+
+func Test_Execute_EchoMaybeTurnedOn(t *testing.T) {
+	// Arrange
+	q := NewInputQueue(10, 10, logging.NewNullLogger())
+	player := absmachine.NewPlayer()
+	world := absmachine.NewWorld()
+	playerOutputChannel := make(chan *PlayerOutput, 10)
+	playerErrorReturnChannel := make(chan error, 10)
+
+	world.AddPlayers([]*absmachine.Player{player})
+
+	fakeCommand := FakeCommand{
+		returnError: nil,
+		returnResult: mudio.CommandResult{
+			TurnOnEcho: true,
+		},
+	}
+
+	q.Append(&PlayerInput{
+		player:             player,
+		command:            &fakeCommand,
+		outputChannel:      playerOutputChannel,
+		errorReturnChannel: playerErrorReturnChannel,
+	})
+
+	// Act
+	q.Execute(world)
+
+	// Assert
+	output := getOutput(playerOutputChannel)
+	if len(output) != 2 || output[0].text != "[H:0] [M:0] >" && output[1].echoState != ES_On {
+		t.Error("Expected output to be a prompt and a single ES_On")
+	}
+}
+
+func Test_Execute_CommandOutputSentToPlayer(t *testing.T) {
+	// Arrange
+	q := NewInputQueue(10, 10, logging.NewNullLogger())
+	player := absmachine.NewPlayer()
+	world := absmachine.NewWorld()
+	playerOutputChannel := make(chan *PlayerOutput, 10)
+	playerErrorReturnChannel := make(chan error, 10)
+
+	world.AddPlayers([]*absmachine.Player{player})
+
+	fakeCommand := FakeCommand{
+		returnError: nil,
+		returnResult: mudio.CommandResult{
+			Output: "Some output",
+		},
+	}
+
+	q.Append(&PlayerInput{
+		player:             player,
+		command:            &fakeCommand,
+		outputChannel:      playerOutputChannel,
+		errorReturnChannel: playerErrorReturnChannel,
+	})
+
+	// Act
+	q.Execute(world)
+
+	// Assert
+	testOutput(t, playerOutputChannel, fmt.Sprintln("Some output"), "[H:0] [M:0] > ")
+}
+
+// Utilities for testing the input queue
+func getOutput(channel <-chan *PlayerOutput) []*PlayerOutput {
+	output := make([]*PlayerOutput, 0)
+	done := false
+
+	for !done {
+		select {
+		case playerOutput := <-channel:
+			output = append(output, playerOutput)
+		default:
+			done = true
+		}
+	}
+
+	return output
+}
+
+func getErrors(channel <-chan error) []error {
+	errors := make([]error, 0)
+	done := false
+
+	for !done {
+		select {
+		case err := <-channel:
+			errors = append(errors, err)
+		default:
+			done = true
+		}
+	}
+
+	return errors
+}
+
+func testOutput(t *testing.T, outputChannel <-chan *PlayerOutput, expectedValues ...string) {
+	output := getOutput(outputChannel)
+
+	isError := false
+	if len(output) != len(expectedValues) {
+		isError = true
+	} else {
+		for i := 0; !isError && i < len(output); i++ {
+			if output[i].text != expectedValues[i] {
+				isError = true
+			}
+		}
+	}
+
+	if isError {
+		outputText := make([]string, len(output))
+		for i := 0; i < len(output); i++ {
+			outputText[i] = output[i].text
+		}
+		t.Errorf("Expected output: %#v, but got: %#v", expectedValues, outputText)
+	}
+}
+
+func testError(t *testing.T, errorReturnChannel <-chan error, expectedErrors ...error) {
+	errors := getErrors(errorReturnChannel)
+
+	isError := false
+	if len(errors) != len(expectedErrors) {
+		isError = true
+	} else {
+		for i := 0; !isError && i < len(errors); i++ {
+			if errors[i] != expectedErrors[i] {
+				isError = true
+			}
+		}
+	}
+
+	if isError {
+		actualErrorTexts := make([]string, len(errors))
+		for i := 0; i < len(errors); i++ {
+			actualErrorTexts[i] = errors[i].Error()
+		}
+
+		expectedErrorTexts := make([]string, len(errors))
+		for i := 0; i < len(expectedErrors); i++ {
+			expectedErrorTexts[i] = expectedErrors[i].Error()
+		}
+		t.Errorf("Expected errors: %#v, but got: %#v", expectedErrorTexts, actualErrorTexts)
+	}
+}
