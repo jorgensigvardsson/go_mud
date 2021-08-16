@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/jorgensigvardsson/gomud/absmachine"
+	"github.com/jorgensigvardsson/gomud/logging"
 )
 
 const InvalidInput = "Invalid input."
@@ -30,6 +31,7 @@ type CommandContext struct {
 	Input  string
 	World  *absmachine.World
 	Player *absmachine.Player
+	Logger logging.Logger
 }
 
 type CommandError struct {

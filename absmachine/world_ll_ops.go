@@ -129,14 +129,7 @@ func (room *Room) Connect(otherRoom *Room, direction Direction) *LowLevelOpsErro
 		return &LowLevelOpsError{errorCode: ErrorIconsistency, message: "Room is already connected to another room in specified direction"}
 	}
 
-	oppositeDirection := OppositeDirections[direction]
-
-	if otherRoom.AdjacentRooms[oppositeDirection] != nil {
-		return &LowLevelOpsError{errorCode: ErrorIconsistency, message: "Other room is already connected to another room in opposite direction"}
-	}
-
 	room.AdjacentRooms[direction] = otherRoom
-	otherRoom.AdjacentRooms[oppositeDirection] = room
 	return nil
 }
 
@@ -145,7 +138,14 @@ func (room *Room) ConnectDuplex(otherRoom *Room, direction Direction) *LowLevelO
 		return &LowLevelOpsError{errorCode: ErrorIconsistency, message: "Room is already connected to another room in specified direction"}
 	}
 
+	oppositeDirection := OppositeDirections[direction]
+
+	if otherRoom.AdjacentRooms[oppositeDirection] != nil {
+		return &LowLevelOpsError{errorCode: ErrorIconsistency, message: "Other room is already connected to another room in opposite direction"}
+	}
+
 	room.AdjacentRooms[direction] = otherRoom
+	otherRoom.AdjacentRooms[oppositeDirection] = room
 	return nil
 }
 

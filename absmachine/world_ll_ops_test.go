@@ -293,3 +293,57 @@ func Test_Move_ValidDirection(t *testing.T) {
 		t.Errorf("Unexpected error: %+v", *err)
 	}
 }
+
+func Test_Connect_Unidirectional(t *testing.T) {
+	// Arrange
+	world := NewWorld()
+	northRoom := NewRoom()
+	room := NewRoom()
+
+	world.AddRooms([]*Room{room, northRoom})
+
+	// Act
+	err := room.Connect(northRoom, DIR_NORTH)
+
+	// Assert
+
+	if err != nil {
+		t.Errorf("Unexpected error: %+v", *err)
+		return
+	}
+
+	if room.AdjacentRooms[DIR_NORTH] != northRoom {
+		t.Errorf("Failed to connect room to northRoom in the north direction!")
+	}
+
+	if northRoom.AdjacentRooms[DIR_SOUTH] != nil {
+		t.Errorf("Connection was not unidirectional!")
+	}
+}
+
+func Test_ConnectDuplex_Bidirectional(t *testing.T) {
+	// Arrange
+	world := NewWorld()
+	northRoom := NewRoom()
+	room := NewRoom()
+
+	world.AddRooms([]*Room{room, northRoom})
+
+	// Act
+	err := room.ConnectDuplex(northRoom, DIR_NORTH)
+
+	// Assert
+
+	if err != nil {
+		t.Errorf("Unexpected error: %+v", *err)
+		return
+	}
+
+	if room.AdjacentRooms[DIR_NORTH] != northRoom {
+		t.Errorf("Failed to connect room to northRoom in the north direction!")
+	}
+
+	if northRoom.AdjacentRooms[DIR_SOUTH] != room {
+		t.Errorf("Failed to connect northRoom to room in the south direction (not bidirectional)!")
+	}
+}

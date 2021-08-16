@@ -83,6 +83,7 @@ func (q *InputQueue) Execute(world *absmachine.World) {
 			World:  world,
 			Player: player,
 			Input:  input.text,
+			Logger: q.logger,
 		}
 
 		result, err := command.Execute(&commandContext)
