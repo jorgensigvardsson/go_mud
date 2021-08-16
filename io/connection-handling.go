@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/jorgensigvardsson/gomud/absmachine"
+	"github.com/jorgensigvardsson/gomud/ansi"
 	"github.com/jorgensigvardsson/gomud/logging"
 	"github.com/jorgensigvardsson/gomud/mudio"
 )
@@ -36,13 +37,17 @@ func handleConnection(tcpConnection net.Conn, logger logging.Logger, commandChan
 	errorReturnChannel := make(chan error, 1)
 	lineInputChannel := make(chan LineInput, 1)
 	outputChannel := make(chan *PlayerOutput, 10)
+	telnetConnectionObserver := playerTelnetConnectionObserver{logger: logger, player: player}
 
 	// Whip up a TELNET connection (along with an observer)
 	connection := NewTelnetConnection(
 		tcpConnection,
-		&playerTelnetConnectionObserver{logger: logger, player: player},
+		&telnetConnectionObserver,
 		logger,
 	)
+
+	// Kick off a terminal query!
+	connection.QueryTerminal()
 
 	wgLineReader := sync.WaitGroup{}
 	defer func() {
@@ -88,7 +93,18 @@ func handleConnection(tcpConnection net.Conn, logger logging.Logger, commandChan
 			}
 		case output := <-outputChannel:
 			if output.text != "" {
-				connection.WriteString(output.text)
+				outputString := output.text
+
+				if output.raw {
+					// Do nothing - outputString has the raw text!
+				} else if !telnetConnectionObserver.isAnsiCapable {
+					// No ANSI capabilities? Then strip away the ANSI markup
+					outputString = ansi.Strip(outputString)
+				} else {
+					// We're not outputing raw text, and the client terminal can do ANSI, so encode the ANSI escape codes!
+					outputString = ansi.Encode(outputString)
+				}
+				connection.WriteString(outputString)
 			}
 
 			switch output.echoState {
@@ -152,12 +168,21 @@ func readLine(connection TelnetConnection, lineInputChannel chan<- LineInput, wg
 }
 
 type playerTelnetConnectionObserver struct {
-	player *absmachine.Player
-	logger logging.Logger
+	player        *absmachine.Player
+	logger        logging.Logger
+	isAnsiCapable bool
 }
 
 func (observer *playerTelnetConnectionObserver) CommandReceived(command []byte) {
-	// TODO: Do something with the telnet command!
+	if len(command) > 4 && command[0] == IAC && command[1] == SB && command[2] == TERMINAL_TYPE && command[3] == TRANSMIT_BINARY {
+		// We got a terminal type! Let's figure out what it is!
+		// Grab string from position 4 (after IAC SB TERMINAL-TYPE BINARY) but before IAC SE
+		tt := strings.ToLower(string(command[4 : len(command)-2]))
+
+		if strings.Contains(tt, "xterm") || strings.Contains(tt, "ansi") {
+			observer.isAnsiCapable = true
+		}
+	}
 }
 
 func (observer *playerTelnetConnectionObserver) InvalidCommand(data []byte) {

@@ -185,5 +185,5 @@ func (q *InputQueue) Append(inputOrCommand *PlayerInput) {
 }
 
 func normalPrompt(player *absmachine.Player) string {
-	return fmt.Sprintf("[H:%v] [M:%v] > ", player.Health, player.Mana)
+	return fmt.Sprintf("$fg(#96)[H:%v] [M:%v] > $fg(#37)", player.Health, player.Mana)
 }

@@ -29,11 +29,11 @@ func (command *CommandLogin) Execute(context *CommandContext) (CommandResult, *C
 	case LS_Initial:
 		// Show message of the day to user and set command's state to LS_WantUsername
 		command.state = LS_WantUsername
-		return CommandResult{Prompt: "Username: ", Output: "Welcome to GO mud!\r\n" /* TODO: Read from file */}, nil
+		return CommandResult{Prompt: "$fg(#92)Username:$fg(#97) ", Output: "Welcome to GO mud!\r\n" /* TODO: Read from file */}, nil
 	case LS_WantUsername:
 		command.username = context.Input
 		command.state = LS_WantPassword
-		return CommandResult{Prompt: "Password: ", TurnOffEcho: true}, nil
+		return CommandResult{Prompt: "$fg(#92)Password:$fg(#97) ", TurnOffEcho: true}, nil
 	case LS_WantPassword:
 		if context.World.HasPlayer(command.username) {
 			return CommandResult{

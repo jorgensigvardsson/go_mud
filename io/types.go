@@ -35,6 +35,7 @@ type PlayerInput struct {
 type PlayerOutput struct {
 	text      string
 	echoState EchoState
+	raw       bool
 }
 
 func NewCommandPlayerInput(command mudio.Command, player *absmachine.Player, errorReturnChannel chan<- error, outputChannel chan<- *PlayerOutput) *PlayerInput {

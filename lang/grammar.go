@@ -47,6 +47,5 @@ func DirectionName(direction absmachine.Direction) string {
 		return "West"
 	default:
 		panic(fmt.Sprintf("Unknown direction %v", direction))
-
 	}
 }

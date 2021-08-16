@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/jorgensigvardsson/gomud/absmachine"
+	"github.com/jorgensigvardsson/gomud/ansi"
 )
 
 /**** Command: Tell ****/
@@ -55,7 +56,7 @@ func (command *CommandTell) Execute(context *CommandContext) (CommandResult, *Co
 			TextMessages: []TextMessage{
 				{
 					RecipientPlayer: otherPlayer,
-					Text:            fmt.Sprintf("%v tells you: %v", context.Player.Name, args[2]),
+					Text:            fmt.Sprintf("$fg(#96)%v tells you: %v$fg(#97)", context.Player.Name, ansi.Escape(args[2])),
 				},
 			},
 		},

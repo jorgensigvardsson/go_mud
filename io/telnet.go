@@ -79,6 +79,7 @@ type TelnetConnection interface {
 	EchoOff() error
 	EchoOn() error
 	Close() error
+	QueryTerminal() error
 }
 
 // The telnet connection is INHERENTLY unsafe for concurrent use!
@@ -273,6 +274,23 @@ func (tconn *implTelnetConnection) EchoOn() error {
 
 func (tconn *implTelnetConnection) EchoOff() error {
 	_, err := tconn.writer.Write([]byte{IAC, WILL, ECHO, 0})
+	if err == nil {
+		err = tconn.writer.Flush()
+	}
+	return err
+}
+
+func (tconn *implTelnetConnection) QueryTerminal() error {
+	_, err := tconn.writer.Write([]byte{IAC, DO, TERMINAL_TYPE})
+	if err != nil {
+		err = tconn.writer.Flush()
+	}
+
+	if err != nil {
+		return err
+	}
+
+	_, err = tconn.writer.Write([]byte{IAC, SB, TERMINAL_TYPE, ECHO, IAC, SE})
 	if err == nil {
 		err = tconn.writer.Flush()
 	}
