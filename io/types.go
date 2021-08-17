@@ -33,9 +33,10 @@ type PlayerInput struct {
 }
 
 type PlayerOutput struct {
-	text      string
-	echoState EchoState
-	raw       bool
+	text               string
+	echoState          EchoState
+	raw                bool
+	keepAnsiColorState bool // if true, I/O routine will end all transmissions to client with resetting ANSI color state
 }
 
 func NewCommandPlayerInput(command mudio.Command, player *absmachine.Player, errorReturnChannel chan<- error, outputChannel chan<- *PlayerOutput) *PlayerInput {

@@ -105,6 +105,11 @@ func handleConnection(tcpConnection net.Conn, logger logging.Logger, commandChan
 					outputString = ansi.Encode(outputString)
 				}
 				connection.WriteString(outputString)
+
+				if !output.keepAnsiColorState {
+					// Reset color state unless explicitly stated not to!
+					connection.WriteString(ansi.Encode("$fg_white$$bg_black$"))
+				}
 			}
 
 			switch output.echoState {

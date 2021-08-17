@@ -68,7 +68,7 @@ func (q *InputQueue) Execute(world *absmachine.World) {
 			command, err = q.commandParser(input.text)
 
 			if err != nil {
-				pq.outputChannel <- PrintlnfOutput("Error: %v", err.Error())
+				pq.outputChannel <- PrintlnfOutput("$fg_bred$Error: %v", err.Error())
 				// Player typed in something that was not recognized as a command, so just show a prompt and continue
 				pq.outputChannel <- PrintOutput(normalPrompt(player))
 				continue
@@ -185,5 +185,5 @@ func (q *InputQueue) Append(inputOrCommand *PlayerInput) {
 }
 
 func normalPrompt(player *absmachine.Player) string {
-	return fmt.Sprintf("$fg(#96)[H:%v] [M:%v] > $fg(#37)", player.Health, player.Mana)
+	return fmt.Sprintf("$fg_bcyan$[H:%v] [M:%v] > ", player.Health, player.Mana)
 }

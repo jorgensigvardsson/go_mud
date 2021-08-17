@@ -56,7 +56,7 @@ func (command *CommandTell) Execute(context *CommandContext) (CommandResult, *Co
 			TextMessages: []TextMessage{
 				{
 					RecipientPlayer: otherPlayer,
-					Text:            fmt.Sprintf("$fg(#96)%v tells you: %v$fg(#97)", context.Player.Name, ansi.Escape(args[2])),
+					Text:            fmt.Sprintf("$fg_bcyan$%v tells you: %v", context.Player.Name, ansi.Escape(args[2])),
 				},
 			},
 		},

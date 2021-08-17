@@ -3,18 +3,18 @@ package ansi
 import (
 	"fmt"
 	"regexp"
-	"strconv"
 	"strings"
 )
 
 //
 // ANSI color encoding scheme:
 //
-// $fg(#31) = foreground color 31
-// $bg(#101) = background color 101
-//
+// $fg_red$ = foreground red (31)
+// $bg_red$ = background red (41)
+// $fg_bred$ = foreground bright red (91)
+// etc...
 
-var reColorization = regexp.MustCompile(`\$(((?P<fn>[a-z]+)\(#(?P<index>\d{2,3})\))|\$)`)
+var reColorization = regexp.MustCompile(`\$[a-z_]*\$`)
 
 func Encode(text string) string {
 	// Optimization. Without this check, this function is 20 times slower!
@@ -42,26 +42,78 @@ func Strip(text string) string {
 	return reColorization.ReplaceAllLiteralString(text, "")
 }
 
-func transformFunc(f string) string {
-	matches := reColorization.FindStringSubmatch(f)
-	funcName := matches[3]
-	if index, err := strconv.Atoi(matches[4]); err != nil {
-		// Not sure what the index was!?
-		return ""
-	} else {
-		var ansiIndex int
-		switch {
-		case funcName == "fg" && (index >= 30 && index <= 37 || index >= 90 && index <= 97),
-			funcName == "bg" && (index >= 40 && index <= 47 || index >= 100 && index <= 107):
-			ansiIndex = index
-		default:
-			ansiIndex = -1
+type ansiColor struct {
+	name    string
+	fgValue int
+	bgValue int
+}
+
+var ansiColors = []ansiColor{
+	// Must be sorted on name!
+	{"bblack", 90, 100},
+	{"bblue", 94, 104},
+	{"bcyan", 96, 106},
+	{"bgreen", 92, 102},
+	{"black", 30, 40},
+	{"blue", 34, 44},
+	{"bmagenta", 95, 105},
+	{"bred", 91, 101},
+	{"bwhite", 97, 107},
+	{"byellow", 93, 103},
+	{"cyan", 36, 46},
+	{"green", 32, 42},
+	{"magenta", 35, 45},
+	{"red", 31, 41},
+	{"white", 37, 47},
+	{"yellow", 33, 43},
+}
+
+func findColor(name string) int {
+	startIndex := 0
+	endIndex := len(ansiColors) - 1
+	midIndex := len(ansiColors) / 2
+
+	for startIndex <= endIndex {
+		if ansiColors[midIndex].name == name {
+			return midIndex
 		}
-		if ansiIndex < 0 {
-			return ""
+
+		if ansiColors[midIndex].name > name {
+			endIndex = midIndex - 1
+			midIndex = (startIndex + endIndex) / 2
+			continue
 		}
-		return fmt.Sprintf("\x1b[%vm", ansiIndex)
+
+		startIndex = midIndex + 1
+		midIndex = (startIndex + endIndex) / 2
 	}
+
+	return -1
+}
+
+func transformFunc(f string) string {
+	if len(f) < 5 {
+		// Can't be a color
+		return ""
+	}
+
+	fgOrBg := f[1:3]
+	colorName := f[4 : len(f)-1]
+
+	i := findColor(colorName)
+
+	if i < 0 {
+		return ""
+	}
+
+	var ansiIndex int
+	if fgOrBg == "fg" {
+		ansiIndex = ansiColors[i].fgValue
+	} else {
+		ansiIndex = ansiColors[i].bgValue
+	}
+
+	return fmt.Sprintf("\x1b[%vm", ansiIndex)
 }
 
 func Escape(text string) string {

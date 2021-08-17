@@ -18,7 +18,7 @@ func Test_showNormalPrompt(t *testing.T) {
 
 	promptText := normalPrompt(&player)
 
-	if promptText != "[H:103] [M:43] > " {
+	if promptText != "$fg_bcyan$[H:103] [M:43] > " {
 		t.Errorf("Unexpected prompt: %v", promptText)
 	}
 }
@@ -255,7 +255,7 @@ func Test_Execute_NoInput_StandardPromptWrittenToConnection(t *testing.T) {
 	q.Execute(world)
 
 	// Assert
-	testOutput(t, outputChannel, "[H:0] [M:0] > ")
+	testOutput(t, outputChannel, "$fg_bcyan$[H:0] [M:0] > ")
 }
 
 func Test_Execute_PlayerHasCurrentCommand_InputIsSentToCurrentCommand_CommandFinished(t *testing.T) {
@@ -327,7 +327,7 @@ func Test_Execute_PlayerHasCurrentCommand_InputIsSentToCurrentCommand_CommandErr
 		t.Error("Expected current command for player to be cleared!")
 	}
 
-	testOutput(t, outputChannel, fmt.Sprintln("foo"), "[H:0] [M:0] > ")
+	testOutput(t, outputChannel, fmt.Sprintln("foo"), "$fg_bcyan$[H:0] [M:0] > ")
 }
 
 func Test_Execute_PlayerHasCurrentCommand_InputIsSentToCurrentCommand_CommandWantsToContinue(t *testing.T) {
@@ -431,7 +431,7 @@ func Test_Execute_PlayerHasNoCurrentCommand_InvalidInput_ErrorAndStandardPromptW
 	q.Execute(world)
 
 	// Assert
-	testOutput(t, outputChannel, fmt.Sprintln("Error: foo"), "[H:0] [M:0] > ")
+	testOutput(t, outputChannel, fmt.Sprintln("$fg_bred$Error: foo"), "$fg_bcyan$[H:0] [M:0] > ")
 }
 
 func Test_Execute_PlayerHasNoCurrentCommand_InputIsSentToParsedCommand_CommandFinished(t *testing.T) {
@@ -470,7 +470,7 @@ func Test_Execute_PlayerHasNoCurrentCommand_InputIsSentToParsedCommand_CommandFi
 		t.Error("Expected current command for player to be cleared!")
 	}
 
-	testOutput(t, outputChannel, "[H:0] [M:0] > ")
+	testOutput(t, outputChannel, "$fg_bcyan$[H:0] [M:0] > ")
 }
 
 func Test_Execute_PlayerHasNoCurrentCommand_InputIsSentToParsedCommand_CommandErrorsAreWrittenToConnection(t *testing.T) {
@@ -509,7 +509,7 @@ func Test_Execute_PlayerHasNoCurrentCommand_InputIsSentToParsedCommand_CommandEr
 		t.Error("Expected current command for player to be cleared!")
 	}
 
-	testOutput(t, outputChannel, fmt.Sprintln("foo"), "[H:0] [M:0] > ")
+	testOutput(t, outputChannel, fmt.Sprintln("foo"), "$fg_bcyan$[H:0] [M:0] > ")
 }
 
 func Test_Execute_PlayerHasNoCurrentCommand_InputIsSentToParsedCommand_CommandWantsToContinue(t *testing.T) {
@@ -625,7 +625,7 @@ func Test_Execute_PlayerHasNoCurrentCommand_InputIsCommand_CommandFinished(t *te
 		t.Error("Expected current command for player to be cleared!")
 	}
 
-	testOutput(t, outputChannel, "[H:0] [M:0] > ")
+	testOutput(t, outputChannel, "$fg_bcyan$[H:0] [M:0] > ")
 }
 
 func Test_Execute_PlayerHasNoCurrentCommand_InputIsCommand_CommandErrorsAreWrittenToConnection(t *testing.T) {
@@ -660,7 +660,7 @@ func Test_Execute_PlayerHasNoCurrentCommand_InputIsCommand_CommandErrorsAreWritt
 		t.Error("Expected current command for player to be cleared!")
 	}
 
-	testOutput(t, outputChannel, fmt.Sprintln("foo"), "[H:0] [M:0] > ")
+	testOutput(t, outputChannel, fmt.Sprintln("foo"), "$fg_bcyan$[H:0] [M:0] > ")
 }
 
 func Test_Execute_PlayerHasNoCurrentCommand_InputIsCommand_CommandWantsToContinue(t *testing.T) {
@@ -792,8 +792,8 @@ func Test_Execute_TextMessagesAreSentToRecipientPlayers(t *testing.T) {
 	q.Execute(world)
 
 	// Assert
-	testOutput(t, player2OutputChannel, fmt.Sprintln(""), fmt.Sprintln("for player 2"), "[H:123] [M:321] > ")
-	testOutput(t, player3OutputChannel, fmt.Sprintln(""), fmt.Sprintln("for player 3"), "[H:456] [M:654] > ")
+	testOutput(t, player2OutputChannel, fmt.Sprintln(""), fmt.Sprintln("for player 2"), "$fg_bcyan$[H:123] [M:321] > ")
+	testOutput(t, player3OutputChannel, fmt.Sprintln(""), fmt.Sprintln("for player 3"), "$fg_bcyan$[H:456] [M:654] > ")
 }
 
 func Test_Execute_EchoMaybeTurnedOff(t *testing.T) {
@@ -825,7 +825,7 @@ func Test_Execute_EchoMaybeTurnedOff(t *testing.T) {
 
 	// Assert
 	output := getOutput(playerOutputChannel)
-	if len(output) != 2 || output[0].text != "[H:0] [M:0] >" && output[1].echoState != ES_Off {
+	if len(output) != 2 || output[0].text != "$fg_bcyan$[H:0] [M:0] >" && output[1].echoState != ES_Off {
 		t.Error("Expected output to be a prompt and a single ES_Off")
 	}
 }
@@ -859,7 +859,7 @@ func Test_Execute_EchoMaybeTurnedOn(t *testing.T) {
 
 	// Assert
 	output := getOutput(playerOutputChannel)
-	if len(output) != 2 || output[0].text != "[H:0] [M:0] >" && output[1].echoState != ES_On {
+	if len(output) != 2 || output[0].text != "$fg_bcyan$[H:0] [M:0] >" && output[1].echoState != ES_On {
 		t.Error("Expected output to be a prompt and a single ES_On")
 	}
 }
@@ -892,7 +892,7 @@ func Test_Execute_CommandOutputSentToPlayer(t *testing.T) {
 	q.Execute(world)
 
 	// Assert
-	testOutput(t, playerOutputChannel, fmt.Sprintln("Some output"), "[H:0] [M:0] > ")
+	testOutput(t, playerOutputChannel, fmt.Sprintln("Some output"), "$fg_bcyan$[H:0] [M:0] > ")
 }
 
 // Utilities for testing the input queue
