@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"reflect"
 	"testing"
+
+	"github.com/jorgensigvardsson/gomud/absmachine"
 )
 
 func Test_EmptyInput_EmptyCommand(t *testing.T) {
@@ -155,7 +157,7 @@ func Test_SimpleCommand_UnclosedQuote(t *testing.T) {
 	_, err := ParseCommandLine(input)
 
 	// Assert
-	if err != ErrInvalidCommandLine {
+	if err != ErrInvalidCommand {
 		t.Errorf("Did not expect error %v", err)
 	}
 }
@@ -174,7 +176,7 @@ var commandTestTable []commandTestTableEntry = []commandTestTableEntry{
 
 func Test_ParseCommand(t *testing.T) {
 	for _, e := range commandTestTable {
-		command, err := ParseCommand(e.commandInput)
+		command, err := ParseCommand(e.commandInput, &absmachine.Player{})
 
 		if err != nil {
 			t.Errorf("Command input \"%v\" generated the error: %v", e.commandInput, err)
@@ -196,14 +198,14 @@ func Test_ParseCommand(t *testing.T) {
 }
 
 func Test_ParseCommand_InvalidCommandLine(t *testing.T) {
-	_, err := ParseCommand("invalid \"command line")
-	if err != ErrInvalidCommandLine {
+	_, err := ParseCommand("invalid \"command line", &absmachine.Player{})
+	if err != ErrInvalidCommand {
 		t.Errorf("Command input generated the unexpected error: %v", err)
 	}
 }
 
 func Test_ParseCommand_UnknownCommand(t *testing.T) {
-	_, err := ParseCommand("garbledigarbage")
+	_, err := ParseCommand("garbledigarbage", &absmachine.Player{})
 	if err != ErrUnknownCommand {
 		t.Errorf("Command input generated the unexpected error: %v", err)
 	}

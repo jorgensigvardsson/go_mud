@@ -327,7 +327,7 @@ func Test_Execute_PlayerHasCurrentCommand_InputIsSentToCurrentCommand_CommandErr
 		t.Error("Expected current command for player to be cleared!")
 	}
 
-	testOutput(t, outputChannel, fmt.Sprintln("foo"), "$fg_bcyan$[H:0] [M:0] > ")
+	testOutput(t, outputChannel, fmt.Sprintln("$fg_bred$foo"), "$fg_bcyan$[H:0] [M:0] > ")
 }
 
 func Test_Execute_PlayerHasCurrentCommand_InputIsSentToCurrentCommand_CommandWantsToContinue(t *testing.T) {
@@ -414,7 +414,7 @@ func Test_Execute_PlayerHasNoCurrentCommand_InvalidInput_ErrorAndStandardPromptW
 	world := absmachine.NewWorld()
 	outputChannel := make(chan *PlayerOutput, 10)
 
-	q.commandParser = func(text string) (command mudio.Command, err error) {
+	q.commandParser = func(text string, player *absmachine.Player) (command mudio.Command, err error) {
 		return nil, errors.New("foo")
 	}
 
@@ -431,7 +431,7 @@ func Test_Execute_PlayerHasNoCurrentCommand_InvalidInput_ErrorAndStandardPromptW
 	q.Execute(world)
 
 	// Assert
-	testOutput(t, outputChannel, fmt.Sprintln("$fg_bred$Error: foo"), "$fg_bcyan$[H:0] [M:0] > ")
+	testOutput(t, outputChannel, fmt.Sprintln("$fg_bred$foo"), "$fg_bcyan$[H:0] [M:0] > ")
 }
 
 func Test_Execute_PlayerHasNoCurrentCommand_InputIsSentToParsedCommand_CommandFinished(t *testing.T) {
@@ -445,7 +445,7 @@ func Test_Execute_PlayerHasNoCurrentCommand_InputIsSentToParsedCommand_CommandFi
 		returnResult: mudio.CommandResult{},
 	}
 
-	q.commandParser = func(text string) (command mudio.Command, err error) {
+	q.commandParser = func(text string, player *absmachine.Player) (command mudio.Command, err error) {
 		return &fakeCommand, nil
 	}
 
@@ -484,7 +484,7 @@ func Test_Execute_PlayerHasNoCurrentCommand_InputIsSentToParsedCommand_CommandEr
 		returnResult: mudio.CommandResult{},
 	}
 
-	q.commandParser = func(text string) (command mudio.Command, err error) {
+	q.commandParser = func(text string, player *absmachine.Player) (command mudio.Command, err error) {
 		return &fakeCommand, nil
 	}
 
@@ -509,7 +509,7 @@ func Test_Execute_PlayerHasNoCurrentCommand_InputIsSentToParsedCommand_CommandEr
 		t.Error("Expected current command for player to be cleared!")
 	}
 
-	testOutput(t, outputChannel, fmt.Sprintln("foo"), "$fg_bcyan$[H:0] [M:0] > ")
+	testOutput(t, outputChannel, fmt.Sprintln("$fg_bred$foo"), "$fg_bcyan$[H:0] [M:0] > ")
 }
 
 func Test_Execute_PlayerHasNoCurrentCommand_InputIsSentToParsedCommand_CommandWantsToContinue(t *testing.T) {
@@ -523,7 +523,7 @@ func Test_Execute_PlayerHasNoCurrentCommand_InputIsSentToParsedCommand_CommandWa
 		returnResult: mudio.CommandResult{Prompt: "A prompt"},
 	}
 
-	q.commandParser = func(text string) (command mudio.Command, err error) {
+	q.commandParser = func(text string, player *absmachine.Player) (command mudio.Command, err error) {
 		return &fakeCommand, nil
 	}
 
@@ -565,7 +565,7 @@ func Test_Execute_PlayerHasNoCurrentCommand_InputIsSentToParsedCommand_CommandWa
 	}
 	errorReturnChannel := make(chan error, 10)
 
-	q.commandParser = func(text string) (command mudio.Command, err error) {
+	q.commandParser = func(text string, player *absmachine.Player) (command mudio.Command, err error) {
 		return &fakeCommand, nil
 	}
 
@@ -660,7 +660,7 @@ func Test_Execute_PlayerHasNoCurrentCommand_InputIsCommand_CommandErrorsAreWritt
 		t.Error("Expected current command for player to be cleared!")
 	}
 
-	testOutput(t, outputChannel, fmt.Sprintln("foo"), "$fg_bcyan$[H:0] [M:0] > ")
+	testOutput(t, outputChannel, fmt.Sprintln("$fg_bred$foo"), "$fg_bcyan$[H:0] [M:0] > ")
 }
 
 func Test_Execute_PlayerHasNoCurrentCommand_InputIsCommand_CommandWantsToContinue(t *testing.T) {
@@ -712,7 +712,7 @@ func Test_Execute_PlayerHasNoCurrentCommand_InputIsCommand_CommandWantsToTermina
 	}
 	errorReturnChannel := make(chan error, 10)
 
-	q.commandParser = func(text string) (command mudio.Command, err error) {
+	q.commandParser = func(text string, player *absmachine.Player) (command mudio.Command, err error) {
 		return &fakeCommand, nil
 	}
 

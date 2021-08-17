@@ -10,28 +10,43 @@ type CommandMove struct {
 	direction absmachine.Direction
 }
 
-func NewCommandMoveNorth(args []string) Command {
-	return &CommandMove{absmachine.DIR_NORTH}
+var moveRequirements = CombineRequirements(
+	RequirePlayerLoggedIn,
+	RequirePlayerStanding,
+)
+
+func RequireAdjacentRoomInDirection(dir absmachine.Direction) CommandRequirementsEvaluator {
+	return CombineRequirements(
+		moveRequirements,
+		func(player *absmachine.Player) bool {
+			return player.Room != nil &&
+				player.Room.AdjacentRooms[dir] != nil
+		},
+	)
 }
 
-func NewCommandMoveSouth(args []string) Command {
-	return &CommandMove{absmachine.DIR_SOUTH}
+func NewCommandMoveNorth(args []string) (Command, CommandRequirementsEvaluator) {
+	return &CommandMove{absmachine.DIR_NORTH}, RequireAdjacentRoomInDirection(absmachine.DIR_NORTH)
 }
 
-func NewCommandMoveEast(args []string) Command {
-	return &CommandMove{absmachine.DIR_EAST}
+func NewCommandMoveSouth(args []string) (Command, CommandRequirementsEvaluator) {
+	return &CommandMove{absmachine.DIR_SOUTH}, RequireAdjacentRoomInDirection(absmachine.DIR_SOUTH)
 }
 
-func NewCommandMoveWest(args []string) Command {
-	return &CommandMove{absmachine.DIR_WEST}
+func NewCommandMoveEast(args []string) (Command, CommandRequirementsEvaluator) {
+	return &CommandMove{absmachine.DIR_EAST}, RequireAdjacentRoomInDirection(absmachine.DIR_EAST)
 }
 
-func NewCommandMoveUp(args []string) Command {
-	return &CommandMove{absmachine.DIR_UP}
+func NewCommandMoveWest(args []string) (Command, CommandRequirementsEvaluator) {
+	return &CommandMove{absmachine.DIR_WEST}, RequireAdjacentRoomInDirection(absmachine.DIR_WEST)
 }
 
-func NewCommandMoveDown(args []string) Command {
-	return &CommandMove{absmachine.DIR_DOWN}
+func NewCommandMoveUp(args []string) (Command, CommandRequirementsEvaluator) {
+	return &CommandMove{absmachine.DIR_UP}, RequireAdjacentRoomInDirection(absmachine.DIR_UP)
+}
+
+func NewCommandMoveDown(args []string) (Command, CommandRequirementsEvaluator) {
+	return &CommandMove{absmachine.DIR_DOWN}, RequireAdjacentRoomInDirection(absmachine.DIR_DOWN)
 }
 
 func (command *CommandMove) Execute(context *CommandContext) (CommandResult, *CommandError) {

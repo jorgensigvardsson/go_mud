@@ -12,8 +12,8 @@ type CommandTell struct {
 	args []string
 }
 
-func NewCommandTell(args []string) Command {
-	return &CommandTell{args}
+func NewCommandTell(args []string) (Command, CommandRequirementsEvaluator) {
+	return &CommandTell{args}, nil
 }
 
 func (command *CommandTell) Execute(context *CommandContext) (CommandResult, *CommandError) {

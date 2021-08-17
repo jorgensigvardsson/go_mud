@@ -65,10 +65,10 @@ func (q *InputQueue) Execute(world *absmachine.World) {
 			command = input.command
 		} else if input.text != "" {
 			var err error
-			command, err = q.commandParser(input.text)
+			command, err = q.commandParser(input.text, player)
 
 			if err != nil {
-				pq.outputChannel <- PrintlnfOutput("$fg_bred$Error: %v", err.Error())
+				pq.outputChannel <- PrintlnfOutput("$fg_bred$%v", err.Error())
 				// Player typed in something that was not recognized as a command, so just show a prompt and continue
 				pq.outputChannel <- PrintOutput(normalPrompt(player))
 				continue
@@ -90,7 +90,7 @@ func (q *InputQueue) Execute(world *absmachine.World) {
 
 		if err != nil {
 			// We had an error, so let's show that to the user!
-			pq.outputChannel <- PrintlnOutput(err.Error())
+			pq.outputChannel <- PrintlnfOutput("$fg_bred$%v", err.Error())
 		}
 
 		if result.Output != "" {

@@ -36,6 +36,15 @@ const (
 	PS_BUSY
 )
 
+type PlayerClass int
+
+const (
+	PC_Warrior PlayerClass = iota
+	PC_Thief
+	PC_Cleric
+	PC_Wizard
+)
+
 type Room struct {
 	Title         string
 	Description   string
@@ -55,6 +64,7 @@ type Player struct {
 	Mana        int
 	Level       int
 	State       PlayerState
+	Class       PlayerClass
 }
 
 type Mob struct {

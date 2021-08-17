@@ -27,6 +27,8 @@ type Command interface {
 	Execute(context *CommandContext) (result CommandResult, err *CommandError)
 }
 
+type CommandRequirementsEvaluator func(player *absmachine.Player) bool
+
 type CommandContext struct {
 	Input  string
 	World  *absmachine.World
@@ -49,8 +51,8 @@ func NewCommandError(message string) *CommandError {
 /**** Command: Who ****/
 type CommandWho struct{}
 
-func NewCommandWho(args []string) Command {
-	return &CommandWho{}
+func NewCommandWho(args []string) (Command, CommandRequirementsEvaluator) {
+	return &CommandWho{}, nil
 }
 
 func (command *CommandWho) Execute(context *CommandContext) (CommandResult, *CommandError) {
@@ -80,8 +82,8 @@ type CommandQuit struct {
 
 const CommandQuitConfirmationMessage = "Are you sure (y/n)?: "
 
-func NewCommandQuit(args []string) Command {
-	return &CommandQuit{args: args}
+func NewCommandQuit(args []string) (Command, CommandRequirementsEvaluator) {
+	return &CommandQuit{args: args}, nil
 }
 
 func (command *CommandQuit) Execute(context *CommandContext) (CommandResult, *CommandError) {
@@ -105,5 +107,24 @@ func (command *CommandQuit) Execute(context *CommandContext) (CommandResult, *Co
 		return CommandResult{}, nil
 	default:
 		return CommandResult{Prompt: InvalidInput}, nil
+	}
+}
+
+func RequirePlayerLoggedIn(player *absmachine.Player) bool {
+	return player.State.HasFlag(absmachine.PS_LOGGED_IN)
+}
+
+func RequirePlayerStanding(player *absmachine.Player) bool {
+	return player.State.HasFlag(absmachine.PS_STANDING)
+}
+
+func CombineRequirements(evaluators ...CommandRequirementsEvaluator) CommandRequirementsEvaluator {
+	return func(player *absmachine.Player) bool {
+		for _, e := range evaluators {
+			if !e(player) {
+				return false
+			}
+		}
+		return true
 	}
 }

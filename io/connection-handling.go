@@ -61,8 +61,9 @@ func handleConnection(tcpConnection net.Conn, logger logging.Logger, commandChan
 	}()
 
 	// The bootstrapping command: Login!
+	loginCmd, _ := mudio.NewCommandLogin([]string{})
 	commandChannel <- NewCommandPlayerInput(
-		mudio.NewCommandLogin([]string{}),
+		loginCmd,
 		player,
 		errorReturnChannel,
 		outputChannel,

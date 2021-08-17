@@ -1,13 +1,17 @@
 package mudio
 
 import (
-	"errors"
 	"strings"
+
+	"github.com/jorgensigvardsson/gomud/absmachine"
 )
 
 type commandConstructor struct {
-	name string
-	cons func(args []string) Command
+	name      string
+	cat       string
+	shortDesc string
+	longDesc  string
+	cons      func(args []string) (Command, CommandRequirementsEvaluator)
 }
 
 type CommandLine struct {
@@ -15,7 +19,16 @@ type CommandLine struct {
 	Args []string
 }
 
-var ErrUnknownCommand = errors.New("unknown command")
+var ErrUnknownCommand = &CommandError{"Unknown command."}
+var ErrUnavailableCommand = &CommandError{"You can't do that right now."}
+var ErrInvalidCommand = &CommandError{"Invalid command."}
+
+const (
+	CAT_Movement      = "Movement"
+	CAT_Information   = "Information"
+	CAT_Session       = "Session"
+	CAT_Communication = "Communication"
+)
 
 var commandConstructors = []commandConstructor{
 	// Important: Keep the constructors sorted on name!
@@ -25,37 +38,54 @@ var commandConstructors = []commandConstructor{
 	// such as "n" (north) than using the nod emote.
 
 	// Directions - this are "prioritized"
-	{name: "up", cons: NewCommandMoveUp},
-	{name: "down", cons: NewCommandMoveDown},
-	{name: "east", cons: NewCommandMoveEast},
-	{name: "west", cons: NewCommandMoveWest},
-	{name: "north", cons: NewCommandMoveNorth},
-	{name: "south", cons: NewCommandMoveSouth},
+	{name: "up", cons: NewCommandMoveUp, cat: CAT_Movement, shortDesc: "Moves character up"},
+	{name: "down", cons: NewCommandMoveDown, cat: CAT_Movement, shortDesc: "Moves character down"},
+	{name: "east", cons: NewCommandMoveEast, cat: CAT_Movement, shortDesc: "Moves character east"},
+	{name: "west", cons: NewCommandMoveWest, cat: CAT_Movement, shortDesc: "Moves character west"},
+	{name: "north", cons: NewCommandMoveNorth, cat: CAT_Movement, shortDesc: "Moves character north"},
+	{name: "south", cons: NewCommandMoveSouth, cat: CAT_Movement, shortDesc: "Moves character south"},
 
 	// Less prioritized commands
-	{name: "look", cons: NewCommandLook},
-	{name: "who", cons: NewCommandWho},
-	{name: "quit", cons: NewCommandQuit},
-	{name: "tell", cons: NewCommandTell},
+	{name: "help", cons: NewCommandHelp, cat: CAT_Information, shortDesc: "The manual!"},
+	{name: "look", cons: NewCommandLook, cat: CAT_Information, shortDesc: "Allows for occular examination"},
+	{name: "who", cons: NewCommandWho, cat: CAT_Session, shortDesc: "Who's online?"},
+	{name: "quit", cons: NewCommandQuit, cat: CAT_Session, shortDesc: "For when you have to go!"},
+	{name: "tell", cons: NewCommandTell, cat: CAT_Communication, shortDesc: "Send private messages to others"},
 }
 
-type CommandParser = func(text string) (command Command, err error)
+type CommandParser = func(text string, player *absmachine.Player) (command Command, err error)
 
-func ParseCommand(text string) (command Command, err error) {
+func findCommandConstructor(text string) *commandConstructor {
+	cmdNameLowerCase := strings.ToLower(text)
+	for i, commandConstructor := range commandConstructors {
+		if strings.HasPrefix(commandConstructor.name, cmdNameLowerCase) {
+			return &commandConstructors[i]
+		}
+	}
+
+	return nil
+}
+
+func ParseCommand(text string, player *absmachine.Player) (command Command, err error) {
 	commandLine, err := ParseCommandLine(text)
 
 	if err != nil {
 		return nil, err
 	}
 
-	cmdNameLowerCase := strings.ToLower(commandLine.Name)
-	for _, commandConstructor := range commandConstructors {
-		if strings.HasPrefix(commandConstructor.name, cmdNameLowerCase) {
-			return commandConstructor.cons(commandLine.Args), nil
-		}
+	cmdCons := findCommandConstructor(commandLine.Name)
+
+	if cmdCons == nil {
+		return nil, ErrUnknownCommand
 	}
 
-	return nil, ErrUnknownCommand
+	cmd, reqs := cmdCons.cons(commandLine.Args)
+
+	if reqs != nil && !reqs(player) { // Does the command have requirements?
+		return nil, ErrUnavailableCommand
+	}
+
+	return cmd, nil
 }
 
 func ParseCommandLine(text string) (CommandLine, error) {
@@ -75,8 +105,6 @@ func ParseCommandLine(text string) (CommandLine, error) {
 
 	return CommandLine{Name: command, Args: args}, nil
 }
-
-var ErrInvalidCommandLine = errors.New("invalid command line")
 
 // If count < 0, then the returned array will contain all arguments, neatly parsed.
 // if count >= 0, then the returned array will contain count + 1 strings. The `count` first
@@ -118,7 +146,7 @@ func ParseArguments(text string, count int /* < 0 means parse ALL arguments */) 
 
 	if count < 0 { // We want all arguments
 		if insideQuotes {
-			return args, ErrInvalidCommandLine
+			return args, ErrInvalidCommand
 		} else {
 			args = append(args, text[start:i])
 		}

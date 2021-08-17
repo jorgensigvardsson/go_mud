@@ -10,8 +10,8 @@ type CommandLook struct {
 	args []string
 }
 
-func NewCommandLook(args []string) Command {
-	return &CommandLook{args}
+func NewCommandLook(args []string) (Command, CommandRequirementsEvaluator) {
+	return &CommandLook{args}, nil
 }
 
 func (command *CommandLook) Execute(context *CommandContext) (CommandResult, *CommandError) {

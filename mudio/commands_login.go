@@ -20,8 +20,8 @@ type CommandLogin struct {
 	state    LoginState
 }
 
-func NewCommandLogin(args []string) Command {
-	return &CommandLogin{state: LS_Initial}
+func NewCommandLogin(args []string) (Command, CommandRequirementsEvaluator) {
+	return &CommandLogin{state: LS_Initial}, nil
 }
 
 func (command *CommandLogin) Execute(context *CommandContext) (CommandResult, *CommandError) {
