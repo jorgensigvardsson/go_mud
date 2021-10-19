@@ -33,7 +33,15 @@ func buildWorld() *absmachine.World {
 		panic(err)
 	}
 
+	mob1 := absmachine.NewMob()
+	mob1.Name = "Angry Spider"
+	mob1.Description = "The hairy 8 legged beast is angry!"
+	mob1.RoomDescription = "An angry spider is looking straight at you with all of its eyes!"
+
+	world.AddMobs([]*absmachine.Mob{mob1})
 	world.AddRooms([]*absmachine.Room{entryRoom, peacefulRoom})
+
+	mob1.RelocateToRoom(entryRoom)
 	world.StartRoom = entryRoom
 
 	return world

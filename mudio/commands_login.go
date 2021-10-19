@@ -47,7 +47,7 @@ func (command *CommandLogin) Execute(context *CommandContext) (CommandResult, *C
 		context.World.AddPlayers([]*absmachine.Player{context.Player})
 		context.Player.RelocateToRoom(context.World.StartRoom)
 
-		lookResult, _ := doLook(context)
+		lookResult, _ := lookRoom(context)
 
 		return CommandResult{
 			Output:     "\n" + /* Because echo off "stole" the new line from the user */ lookResult.Output,
