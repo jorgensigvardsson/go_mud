@@ -141,7 +141,7 @@ func Test_Execute_NoInput_NoEffect(t *testing.T) {
 	world.AddPlayers([]*absmachine.Player{player})
 
 	// Act
-	q.Execute(world)
+	q.Execute(world, 0)
 
 	// Assert
 	if len(world.Players) != 1 {
@@ -163,7 +163,7 @@ func Test_Execute_PlayersHaveBeenAdded_ButHasNoInput_NoEffect(t *testing.T) {
 	q.playerQueues[player] = newPlayerQueue()
 
 	// Act
-	q.Execute(world)
+	q.Execute(world, 0)
 
 	// Assert
 	if len(world.Players) != 1 {
@@ -190,7 +190,7 @@ func Test_Execute_PlayerHasEvent_PE_Exited_PlayerIsRemovedFromWorld(t *testing.T
 	})
 
 	// Act
-	q.Execute(world)
+	q.Execute(world, 0)
 
 	// Assert
 	if len(world.Players) != 0 {
@@ -213,7 +213,7 @@ func Test_Execute_PlayerHasEvent_UnknownEvent_NoEffect(t *testing.T) {
 	})
 
 	// Act
-	q.Execute(world)
+	q.Execute(world, 0)
 
 	// Assert
 	if len(world.Players) != 1 {
@@ -252,7 +252,7 @@ func Test_Execute_NoInput_StandardPromptWrittenToConnection(t *testing.T) {
 	})
 
 	// Act
-	q.Execute(world)
+	q.Execute(world, 0)
 
 	// Assert
 	testOutput(t, outputChannel, "$fg_bcyan$[H:0] [M:0] > ")
@@ -281,7 +281,7 @@ func Test_Execute_PlayerHasCurrentCommand_InputIsSentToCurrentCommand_CommandFin
 	})
 
 	// Act
-	q.Execute(world)
+	q.Execute(world, 0)
 
 	// Assert
 	if currentCommand.receivedContext.Input != "cmd text" {
@@ -316,7 +316,7 @@ func Test_Execute_PlayerHasCurrentCommand_InputIsSentToCurrentCommand_CommandErr
 	})
 
 	// Act
-	q.Execute(world)
+	q.Execute(world, 0)
 
 	// Assert
 	if currentCommand.receivedContext.Input != "cmd text" {
@@ -353,7 +353,7 @@ func Test_Execute_PlayerHasCurrentCommand_InputIsSentToCurrentCommand_CommandWan
 	})
 
 	// Act
-	q.Execute(world)
+	q.Execute(world, 0)
 
 	// Assert
 	if currentCommand.receivedContext.Input != "cmd text" {
@@ -393,7 +393,7 @@ func Test_Execute_PlayerHasCurrentCommand_InputIsSentToCurrentCommand_CommandWan
 	})
 
 	// Act
-	q.Execute(world)
+	q.Execute(world, 0)
 
 	// Assert
 	if currentCommand.receivedContext.Input != "cmd text" {
@@ -428,7 +428,7 @@ func Test_Execute_PlayerHasNoCurrentCommand_InvalidInput_ErrorAndStandardPromptW
 	})
 
 	// Act
-	q.Execute(world)
+	q.Execute(world, 0)
 
 	// Assert
 	testOutput(t, outputChannel, fmt.Sprintln("$fg_bred$foo"), "$fg_bcyan$[H:0] [M:0] > ")
@@ -459,7 +459,7 @@ func Test_Execute_PlayerHasNoCurrentCommand_InputIsSentToParsedCommand_CommandFi
 	})
 
 	// Act
-	q.Execute(world)
+	q.Execute(world, 0)
 
 	// Assert
 	if fakeCommand.receivedContext == nil {
@@ -498,7 +498,7 @@ func Test_Execute_PlayerHasNoCurrentCommand_InputIsSentToParsedCommand_CommandEr
 	})
 
 	// Act
-	q.Execute(world)
+	q.Execute(world, 0)
 
 	// Assert
 	if fakeCommand.receivedContext == nil {
@@ -537,7 +537,7 @@ func Test_Execute_PlayerHasNoCurrentCommand_InputIsSentToParsedCommand_CommandWa
 	})
 
 	// Act
-	q.Execute(world)
+	q.Execute(world, 0)
 
 	// Assert
 	if fakeCommand.receivedContext == nil {
@@ -579,7 +579,7 @@ func Test_Execute_PlayerHasNoCurrentCommand_InputIsSentToParsedCommand_CommandWa
 	})
 
 	// Act
-	q.Execute(world)
+	q.Execute(world, 0)
 
 	// Assert
 	if fakeCommand.receivedContext == nil {
@@ -614,7 +614,7 @@ func Test_Execute_PlayerHasNoCurrentCommand_InputIsCommand_CommandFinished(t *te
 	})
 
 	// Act
-	q.Execute(world)
+	q.Execute(world, 0)
 
 	// Assert
 	if fakeCommand.receivedContext == nil {
@@ -649,7 +649,7 @@ func Test_Execute_PlayerHasNoCurrentCommand_InputIsCommand_CommandErrorsAreWritt
 	})
 
 	// Act
-	q.Execute(world)
+	q.Execute(world, 0)
 
 	// Assert
 	if fakeCommand.receivedContext == nil {
@@ -684,7 +684,7 @@ func Test_Execute_PlayerHasNoCurrentCommand_InputIsCommand_CommandWantsToContinu
 	})
 
 	// Act
-	q.Execute(world)
+	q.Execute(world, 0)
 
 	// Assert
 	if fakeCommand.receivedContext == nil {
@@ -726,7 +726,7 @@ func Test_Execute_PlayerHasNoCurrentCommand_InputIsCommand_CommandWantsToTermina
 	})
 
 	// Act
-	q.Execute(world)
+	q.Execute(world, 0)
 
 	// Assert
 	if fakeCommand.receivedContext == nil {
@@ -789,7 +789,7 @@ func Test_Execute_TextMessagesAreSentToRecipientPlayers(t *testing.T) {
 	})
 
 	// Act
-	q.Execute(world)
+	q.Execute(world, 0)
 
 	// Assert
 	testOutput(t, player2OutputChannel, fmt.Sprintln(""), fmt.Sprintln("for player 2"), "$fg_bcyan$[H:123] [M:321] > ")
@@ -821,7 +821,7 @@ func Test_Execute_EchoMaybeTurnedOff(t *testing.T) {
 	})
 
 	// Act
-	q.Execute(world)
+	q.Execute(world, 0)
 
 	// Assert
 	output := getOutput(playerOutputChannel)
@@ -855,7 +855,7 @@ func Test_Execute_EchoMaybeTurnedOn(t *testing.T) {
 	})
 
 	// Act
-	q.Execute(world)
+	q.Execute(world, 0)
 
 	// Assert
 	output := getOutput(playerOutputChannel)
@@ -889,7 +889,7 @@ func Test_Execute_CommandOutputSentToPlayer(t *testing.T) {
 	})
 
 	// Act
-	q.Execute(world)
+	q.Execute(world, 0)
 
 	// Assert
 	testOutput(t, playerOutputChannel, fmt.Sprintln("Some output"), "$fg_bcyan$[H:0] [M:0] > ")

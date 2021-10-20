@@ -1,6 +1,7 @@
 package main
 
 import (
+	"math/rand"
 	"net"
 	"os"
 	"os/signal"
@@ -37,6 +38,17 @@ func buildWorld() *absmachine.World {
 	mob1.Name = "Angry Spider"
 	mob1.Description = "The hairy 8 legged beast is angry!"
 	mob1.RoomDescription = "An angry spider is looking straight at you with all of its eyes!"
+	mob1.Actions = append(
+		mob1.Actions,
+		absmachine.MobAction{
+			PeriodLength: 20,
+			Probability:  0.1,
+			Function: &absmachine.SimpleVerbMobAction{
+				Verb:        "jumping",
+				Preposition: "around",
+			},
+		},
+	)
 
 	world.AddMobs([]*absmachine.Mob{mob1})
 	world.AddRooms([]*absmachine.Room{entryRoom, peacefulRoom})
@@ -48,6 +60,9 @@ func buildWorld() *absmachine.World {
 }
 
 func main() {
+	// Make sure we seed the RNG
+	rand.Seed(time.Now().UnixNano())
+
 	world := buildWorld()
 	logger := logging.NewTimestampLoggerDecorator(
 		logging.NewSynchronizingLoggerDecorator(
@@ -82,10 +97,11 @@ func main() {
 
 	// The game loop!
 	run := true
+	tick := 0
 	for run {
 		// Measure how long time we spent processing the commands
 		handleCommandsT0 := time.Now().UTC()
-		inputQueue.Execute(world)
+		inputQueue.Execute(world, tick)
 		handleCommandsT1 := time.Now().UTC()
 
 		// Remove the delta from the TICK length
@@ -110,6 +126,8 @@ func main() {
 			// Figure out if we need to sleep more!
 			timeToSleep = timeToWakeup.Sub(time.Now().UTC())
 		}
+
+		tick++
 	}
 
 	// Shut everything down!

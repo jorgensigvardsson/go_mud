@@ -107,7 +107,7 @@ func lookRoom(context *CommandContext, args ...string) (CommandResult, *CommandE
 		}
 	}
 
-	for _, mob := range context.Player.World.Mobs {
+	for _, mob := range context.Player.Room.Mobs {
 		if mob.RoomDescription != "" {
 			b.Printlnf(mob.RoomDescription)
 		} else {

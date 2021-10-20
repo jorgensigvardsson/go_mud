@@ -4,6 +4,7 @@ import (
 	"container/list"
 	"errors"
 	"fmt"
+	"math/rand"
 
 	"github.com/jorgensigvardsson/gomud/absmachine"
 	"github.com/jorgensigvardsson/gomud/logging"
@@ -41,7 +42,13 @@ func NewInputQueue(maxPlayerLimit int, maxPlayerInputQueueLimit int, logger logg
 	}
 }
 
-func (q *InputQueue) Execute(world *absmachine.World) {
+func (q *InputQueue) Execute(world *absmachine.World, tick int) {
+	runPlayerQueues(q, world)
+	runMobActions(q, world, tick)
+	// TODO: Run player actions (fighting actions, etc)
+}
+
+func runPlayerQueues(q *InputQueue, world *absmachine.World) {
 	for player, pq := range q.playerQueues {
 		if pq.inputs.Len() == 0 {
 			continue
@@ -186,4 +193,35 @@ func (q *InputQueue) Append(inputOrCommand *PlayerInput) {
 
 func normalPrompt(player *absmachine.Player) string {
 	return fmt.Sprintf("$fg_bcyan$[H:%v] [M:%v] > ", player.Health, player.Mana)
+}
+
+func runMobActions(q *InputQueue, world *absmachine.World, tick int) {
+	for _, mob := range world.Mobs {
+		for _, mobAction := range mob.Actions {
+			if tick%mobAction.PeriodLength == 0 && shouldDoAction(mobAction.Probability) {
+				output, err := mobAction.Function.Run(mob, q.logger)
+				if err != nil {
+					q.logger.Printf("Mob action failure: %v", err)
+				}
+
+				if output != "" {
+					sendOutputToPlayersInRoom(q, mob.Room, output)
+				}
+			}
+		}
+	}
+}
+
+func shouldDoAction(probability float32) bool {
+	return rand.Float32() <= probability
+}
+
+func sendOutputToPlayersInRoom(q *InputQueue, room *absmachine.Room, output string) {
+	for _, player := range room.Players {
+		if pq, ok := q.playerQueues[player]; ok {
+			pq.outputChannel <- PrintlnOutput("")                     // Emit a new line in order to clear the prompt on screen
+			pq.outputChannel <- PrintlnfOutput("$fg_cyan$%v", output) // Then the response text
+			pq.outputChannel <- PrintOutput(normalPrompt(player))     // And finally show the prompt again
+		}
+	}
 }

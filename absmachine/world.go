@@ -1,5 +1,7 @@
 package absmachine
 
+import "github.com/jorgensigvardsson/gomud/logging"
+
 type Direction int
 
 const (
@@ -73,6 +75,17 @@ type Mob struct {
 	Room            *Room
 	World           *World
 	RoomDescription string
+	Actions         []MobAction
+}
+
+type MobActionFunction interface {
+	Run(mob *Mob, logger logging.Logger) (output string, err error)
+}
+
+type MobAction struct {
+	PeriodLength int               // Every `PeriodLength` ticks, this action will be evaluated
+	Probability  float32           // Each time this action is evaluated, this probability will determine if the action is done
+	Function     MobActionFunction // The function that will be executed when the action is triggered
 }
 
 type World struct {

@@ -1,6 +1,8 @@
 package absmachine
 
-import "strings"
+import (
+	"strings"
+)
 
 func NewWorld() *World {
 	return &World{}
