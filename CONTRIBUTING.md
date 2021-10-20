@@ -1,0 +1,1 @@
+Should you against all odds want to contribute to this learning project of mine, then please give me a heads up in advance where you state what you want to do. If I think it's a cool idea, then please hack away! When you're done, or want review/whatever, submit a PR!
